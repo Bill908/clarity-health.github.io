@@ -167,11 +167,12 @@ function formatPhoneHref(phone: string) {
 
 function LogoMark() {
   return (
-    <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-[#0f766e] text-white shadow-[0_8px_20px_rgba(15,118,110,0.18)]">
-      <MessageCircle size={21} strokeWidth={2.4} />
-      <span className="absolute bottom-[8px] right-[7px] flex h-[11px] w-[11px] items-center justify-center rounded-full bg-[#f28b72] ring-2 ring-[#0f766e]">
-        <Check size={7} strokeWidth={3.5} />
-      </span>
+    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-[#0f766e] shadow-[0_8px_20px_rgba(15,118,110,0.18)]" aria-label="Clarity Health logo">
+      <svg viewBox="0 0 48 48" className="h-8 w-8" role="img" aria-hidden="true">
+        <path d="M10.5 10.5h27c2.2 0 4 1.8 4 4v14c0 2.2-1.8 4-4 4H24.2l-7.1 5.1v-5.1h-2.6c-2.2 0-4-1.8-4-4v-14c0-2.2 1.8-4 4-4Z" fill="#f8fbf4" />
+        <path d="M15.5 18.2c3.1-1.8 5.9-1.7 8.5.1v11.1c-2.6-1.8-5.4-1.9-8.5-.1V18.2Zm17 0c-3.1-1.8-5.9-1.7-8.5.1v11.1c2.6-1.8 5.4-1.9 8.5-.1V18.2Z" fill="none" stroke="#0f766e" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+        <path d="m27.5 13.9 1.5 1.6 3.2-3.2" fill="none" stroke="#f28b72" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.4" />
+      </svg>
     </div>
   );
 }
