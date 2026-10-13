@@ -66,7 +66,7 @@ const dailySources = [
   { name: "AHRQ", title: "Questions are the answer", detail: "Better conversations with clinicians", summary: "Going into an appointment with a short timeline and a few focused questions can make it easier to share what matters and leave with a clear plan.", points: ["Lead with what changed, when it began, and how it affects your day.", "Ask what to expect, what warning signs to watch for, and when to follow up.", "Repeat the plan back in your own words if anything feels unclear."], href: "https://www.ahrq.gov/questions/index.html" },
 ];
 
-type QuestionKind = "sleep" | "headache" | "cough" | "fever" | "digestive" | "stress" | "skin" | "medication" | "general";
+type QuestionKind = "sleep" | "headache" | "cough" | "cold" | "fever" | "digestive" | "allergies" | "bloodPressure" | "hydration" | "stress" | "mentalHealth" | "skin" | "medication" | "soreThroat" | "doctorVisit" | "recurring" | "pharmacist" | "general";
 type FollowUp = { question: string; answer: string };
 type CommunityReply = { id: string; question_id: string; display_name: string; body: string; created_at: string };
 type CommunityQuestion = { id: string; display_name: string; title: string; body: string; topic: string; created_at: string; replies: CommunityReply[] };
@@ -106,6 +106,42 @@ const followUpGuidance: Record<QuestionKind, FollowUp[]> = {
   medication: [
     { question: "What information do I need?", answer: "Have the exact name, strength, dose, timing, reason for taking it, start date, allergies, and a list of other medicines or supplements. A pharmacist can check interactions quickly." },
     { question: "What if I missed a dose?", answer: "Check the medication label or ask a pharmacist rather than doubling up. Some medicines have time-sensitive instructions, and prescribed medicines should not be stopped suddenly without guidance." },
+  ],
+  cold: [
+    { question: "What can I do at home?", answer: "Rest, drink fluids, use a humidifier or saline spray if helpful, and choose over-the-counter products by their active ingredients. Ask a pharmacist if you take other medicines or have a chronic condition." },
+    { question: "When should I get checked?", answer: "Get advice for trouble breathing, chest pain, dehydration, symptoms that improve then sharply worsen, or a cough or congestion that persists beyond the expected course." },
+  ],
+  allergies: [
+    { question: "How can I find my trigger?", answer: "Track where and when symptoms appear, outdoor exposure, pets, dust, foods, and new products. A clinician can help distinguish allergies from infection or asthma when the pattern is unclear." },
+    { question: "What makes it urgent?", answer: "Swelling of the lips, tongue, or throat; wheezing; trouble breathing; faintness; or rapidly spreading hives needs emergency help." },
+  ],
+  bloodPressure: [
+    { question: "How should I measure it?", answer: "Use a validated upper-arm cuff, rest quietly for five minutes, keep feet on the floor and the arm supported, and take two readings one minute apart. Record the date, time, and readings." },
+    { question: "When is it an emergency?", answer: "A very high reading with chest pain, shortness of breath, weakness, confusion, or vision changes needs urgent care. One reading alone cannot diagnose hypertension; share repeated readings with a clinician." },
+  ],
+  hydration: [
+    { question: "How do I know I am dehydrated?", answer: "Thirst, dry mouth, darker urine, urinating less often, headache, dizziness, and unusual fatigue can be clues. Vomiting, diarrhea, heat, exercise, and fever increase fluid needs." },
+    { question: "What should I drink?", answer: "For ordinary fluid loss, water and regular meals are often enough. With ongoing vomiting or diarrhea, an oral rehydration solution can replace salts as well as water. Get help if you cannot keep fluids down." },
+  ],
+  mentalHealth: [
+    { question: "What should I track?", answer: "Note changes in mood, sleep, appetite, concentration, energy, and ability to do normal tasks, along with what support or situations make things better or worse." },
+    { question: "When should I ask for help?", answer: "Reach out when symptoms last, interfere with daily life, or feel hard to manage alone. If you may hurt yourself or cannot stay safe, contact emergency services or a crisis line immediately." },
+  ],
+  soreThroat: [
+    { question: "What may soothe it?", answer: "Fluids, warm drinks, rest, lozenges for adults, and avoiding smoke can help. Ask a pharmacist about pain relief, especially if you take other medicines or have kidney, liver, or stomach problems." },
+    { question: "What symptoms need care?", answer: "Seek urgent help for trouble breathing or swallowing, drooling, severe one-sided swelling, dehydration, or a rapidly worsening illness. A persistent or recurring sore throat deserves a clinician’s advice." },
+  ],
+  doctorVisit: [
+    { question: "What should I bring?", answer: "Bring a short timeline, medication and supplement list, allergies, relevant home readings, and your top three questions. If possible, note what you have tried and what changed." },
+    { question: "What should I ask before leaving?", answer: "Ask what the leading possibilities are, what the plan is, what warning signs matter, when results are expected, and exactly when and how to follow up." },
+  ],
+  recurring: [
+    { question: "What pattern matters most?", answer: "Track timing, frequency, severity, triggers, recovery time, related symptoms, sleep, food, stress, activity, and any medicine taken. A dated log is often more useful than memory." },
+    { question: "When should I schedule a visit?", answer: "Book a visit when a symptom keeps returning, is becoming more frequent or intense, limits normal activities, or needs repeated self-treatment to settle." },
+  ],
+  pharmacist: [
+    { question: "What can a pharmacist check?", answer: "A pharmacist can review doses, interactions, side effects, duplicate ingredients, missed doses, and whether an over-the-counter product is appropriate for you." },
+    { question: "What should I have ready?", answer: "Bring the exact medicine names and strengths, how you take them, allergies, supplements, and the symptom or concern you want to discuss." },
   ],
   general: [
     { question: "What should I track next?", answer: "Write down when it started, what makes it better or worse, how it affects daily activities, any measured temperature or other readings, and every medicine or supplement you take." },
@@ -250,10 +286,19 @@ function Index() {
     if (normalized.includes("sleep") || normalized.includes("insomnia")) return "sleep";
     if (normalized.includes("headache") || normalized.includes("migraine")) return "headache";
     if (normalized.includes("cough") || normalized.includes("phlegm")) return "cough";
+    if (normalized.includes("cold") || normalized.includes("congestion")) return "cold";
     if (normalized.includes("fever") || normalized.includes("temperature")) return "fever";
     if (normalized.includes("stomach") || normalized.includes("nausea") || normalized.includes("diarrhea")) return "digestive";
+    if (normalized.includes("allerg") || normalized.includes("hay fever")) return "allergies";
+    if (normalized.includes("blood pressure") || normalized.includes("hypertension")) return "bloodPressure";
+    if (normalized.includes("dehydrat") || normalized.includes("how much water") || normalized.includes("hydration")) return "hydration";
+    if (normalized.includes("mental health")) return "mentalHealth";
     if (normalized.includes("anxiety") || normalized.includes("stress") || normalized.includes("panic")) return "stress";
     if (normalized.includes("rash") || normalized.includes("itch") || normalized.includes("skin")) return "skin";
+    if (normalized.includes("sore throat") || normalized.includes("throat")) return "soreThroat";
+    if (normalized.includes("doctor visit") || normalized.includes("prepare for a doctor") || normalized.includes("appointment")) return "doctorVisit";
+    if (normalized.includes("recurring") || normalized.includes("keeps coming back") || normalized.includes("track a")) return "recurring";
+    if (normalized.includes("pharmacist")) return "pharmacist";
     if (normalized.includes("medicine") || normalized.includes("medication") || normalized.includes("pill")) return "medication";
     return "general";
   }, [question]);
@@ -524,6 +569,105 @@ function Index() {
       ],
       next: "Call emergency services for trouble breathing, swelling of the face or throat, fainting, a seizure, or a severe reaction after taking a medicine.",
       consider: "What is the exact name and dose, and what changed after starting, stopping, or missing it?",
+    },
+    cold: {
+      title: "A cold usually improves with time and comfort care",
+      summary: "Colds are usually viral and often improve over 7–10 days, although a cough or tiredness can linger longer. The useful questions are how severe it is, whether it is improving, and whether anything suggests a complication.",
+      points: [
+        "Rest, drink to thirst, and use saline spray, humidified air, or warm fluids if they make breathing and comfort easier.",
+        "Check active ingredients before combining cold products, and ask a pharmacist if you take regular medicines or have a chronic condition.",
+        "Avoid antibiotics unless a clinician identifies a bacterial infection; they do not treat an ordinary viral cold.",
+      ],
+      next: "Seek urgent care for trouble breathing, chest pain, severe dehydration, confusion, or symptoms that improve and then sharply worsen.",
+      consider: "When did it start, is it improving day by day, and do you have breathlessness, chest pain, or a high fever?",
+    },
+    allergies: {
+      title: "The pattern can help separate allergies from infection",
+      summary: "Seasonal allergies often cause sneezing, itchy or watery eyes, and clear drainage that follows a setting or season. Fever, body aches, or a rapid change may point to something else, but symptoms can overlap.",
+      points: [
+        "Track where symptoms appear and possible triggers such as pollen, dust, pets, mold, foods, or a new product.",
+        "Reduce exposure when practical and ask a pharmacist about an antihistamine or nasal treatment that fits your health history.",
+        "Wheezing, night cough, or symptoms that limit exercise deserve a clinician’s assessment rather than repeated self-treatment.",
+      ],
+      next: "Call emergency services for swelling of the lips, tongue, or throat, trouble breathing, faintness, or rapidly spreading hives.",
+      consider: "Do symptoms follow a season, place, food, medicine, or exposure, and are your eyes itchy or is there a fever?",
+    },
+    bloodPressure: {
+      title: "One blood pressure reading is a clue, not a diagnosis",
+      summary: "Blood pressure changes with stress, caffeine, activity, pain, and how the measurement is taken. Repeated, correctly measured readings over time give a clinician a much clearer picture than one number.",
+      points: [
+        "Use a validated upper-arm cuff; rest five minutes, keep feet flat, support your arm, and avoid talking during the reading.",
+        "Take two readings about one minute apart at a similar time and record the date, time, and context.",
+        "Share a pattern of high or low readings with a clinician before changing prescribed medicine or supplements.",
+      ],
+      next: "Get urgent help for a very high reading with chest pain, shortness of breath, severe headache, weakness, confusion, or vision changes.",
+      consider: "What were the readings, how were they taken, and were there symptoms or factors such as caffeine, exercise, or pain?",
+    },
+    hydration: {
+      title: "Hydration needs depend on what your body is losing",
+      summary: "Thirst, urine color and frequency, activity, heat, fever, vomiting, and diarrhea all affect fluid needs. There is no single daily amount that fits every person or situation.",
+      points: [
+        "Drink regularly and let thirst, urine color, and how you feel guide you; avoid forcing large amounts quickly.",
+        "With ongoing vomiting or diarrhea, an oral rehydration solution can replace water and salts more reliably than plain water alone.",
+        "Older adults, children, people who are pregnant, and people with heart or kidney conditions may need individualized advice.",
+      ],
+      next: "Seek care for faintness, confusion, very little urine, inability to keep fluids down, blood in vomit or stool, or severe weakness.",
+      consider: "Are you losing fluid through heat, exercise, vomiting, diarrhea, or fever, and can you keep drinks down?",
+    },
+    mentalHealth: {
+      title: "Mental health support is appropriate before a crisis",
+      summary: "Changes in mood, sleep, appetite, concentration, energy, or interest in usual activities can be meaningful even when you can still get through the day. You do not need to wait until things feel unbearable to ask for support.",
+      points: [
+        "Notice how long the change has lasted and whether it is affecting work, relationships, sleep, eating, or self-care.",
+        "Choose one supportive step today: tell someone you trust, schedule a clinician visit, or use a routine that makes the next hour more manageable.",
+        "A therapist, primary-care clinician, or mental-health service can help sort out options and next steps.",
+      ],
+      next: "If you may hurt yourself, cannot stay safe, or feel detached from reality, contact emergency services or a local crisis line immediately.",
+      consider: "What has changed, how long has it been affecting daily life, and who could help you take the next step?",
+    },
+    soreThroat: {
+      title: "A sore throat is usually about the pattern around it",
+      summary: "A sore throat can come with a viral cold, irritation, allergies, reflux, or sometimes a bacterial infection. Fever, cough, exposure, swallowing difficulty, and duration help determine whether testing or an exam is useful.",
+      points: [
+        "Warm fluids, rest, lozenges for adults, and avoiding smoke can support comfort while you watch the pattern.",
+        "Do not share antibiotics or use leftover medicine; a clinician can decide whether testing is appropriate.",
+        "Note fever, swollen glands, rash, cough, exposure to someone ill, and whether swallowing is becoming harder.",
+      ],
+      next: "Get urgent help for trouble breathing or swallowing, drooling, severe one-sided swelling, dehydration, or rapidly worsening symptoms.",
+      consider: "How long has it lasted, do you have fever or cough, and can you swallow fluids normally?",
+    },
+    doctorVisit: {
+      title: "A few prepared details can make a visit more useful",
+      summary: "You do not need the perfect medical vocabulary. A short timeline, the effect on your daily life, and a few focused questions give a clinician a strong place to start.",
+      points: [
+        "Lead with what changed, when it began, how often it happens, and what makes it better or worse.",
+        "Bring your medication and supplement list, allergies, relevant home readings, and notes about what you have already tried.",
+        "Before leaving, ask for the plan, warning signs, expected timeline, and exactly when and how to follow up.",
+      ],
+      next: "If symptoms become severe or rapidly worsen before the appointment, use urgent or emergency care rather than waiting.",
+      consider: "What is the one change that most affects your life, and what decision do you want help making?",
+    },
+    recurring: {
+      title: "Recurring symptoms are a pattern worth bringing in",
+      summary: "A symptom that keeps returning may have a trigger, a cycle, or a condition that deserves evaluation. A dated record can reveal details that are easy to miss between episodes.",
+      points: [
+        "Track start and stop times, frequency, severity, triggers, related symptoms, sleep, food, activity, stress, and medicines.",
+        "Note whether episodes are becoming more frequent, lasting longer, or requiring more self-treatment.",
+        "Bring the log to a clinician or pharmacist rather than trying to diagnose the pattern yourself.",
+      ],
+      next: "Arrange prompt care for recurring chest pain, fainting, severe pain, blood loss, breathing trouble, neurological changes, or rapid worsening.",
+      consider: "What repeats most reliably, what has changed over time, and what happens between episodes?",
+    },
+    pharmacist: {
+      title: "A pharmacist can answer many medication questions quickly",
+      summary: "Pharmacists can review prescription and over-the-counter medicines together, check duplicate ingredients and interactions, and explain how to take a medicine safely.",
+      points: [
+        "Have the exact names and strengths, how you take them, allergies, supplements, and the symptom or side effect you are concerned about.",
+        "Ask what to do if you miss a dose, whether food or timing matters, and which side effects should prompt a call.",
+        "Do not stop a prescribed medicine or double a dose based only on an online answer; confirm the plan with a professional.",
+      ],
+      next: "Get emergency help for trouble breathing, swelling of the face or throat, fainting, a seizure, or a severe reaction after a medicine.",
+      consider: "What is the exact medicine and dose, and what changed after you started, stopped, or missed it?",
     },
     general: {
       title: "A thoughtful answer starts with the full picture",
