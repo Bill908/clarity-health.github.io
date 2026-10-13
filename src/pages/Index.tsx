@@ -84,9 +84,14 @@ function Index() {
   const currentQuestionSaved = savedQuestions.includes(question.trim());
   const questionKind = useMemo(() => {
     const normalized = question.toLowerCase();
-    if (normalized.includes("sleep")) return "sleep";
-    if (normalized.includes("headache")) return "headache";
-    if (normalized.includes("cough")) return "cough";
+    if (normalized.includes("sleep") || normalized.includes("insomnia")) return "sleep";
+    if (normalized.includes("headache") || normalized.includes("migraine")) return "headache";
+    if (normalized.includes("cough") || normalized.includes("phlegm")) return "cough";
+    if (normalized.includes("fever") || normalized.includes("temperature")) return "fever";
+    if (normalized.includes("stomach") || normalized.includes("nausea") || normalized.includes("diarrhea")) return "digestive";
+    if (normalized.includes("anxiety") || normalized.includes("stress") || normalized.includes("panic")) return "stress";
+    if (normalized.includes("rash") || normalized.includes("itch") || normalized.includes("skin")) return "skin";
+    if (normalized.includes("medicine") || normalized.includes("medication") || normalized.includes("pill")) return "medication";
     return "general";
   }, [question]);
 
@@ -128,6 +133,7 @@ function Index() {
         "If you are awake for about 20 minutes, try a quiet activity in low light and return to bed when sleepy.",
       ],
       next: "If sleep problems happen at least three nights a week for three months, or you snore loudly and wake gasping, talk with a clinician.",
+      consider: "How long has this been happening, and is it affecting your daytime energy or safety?",
     },
     headache: {
       title: "The pattern matters more than the label",
@@ -138,6 +144,7 @@ function Index() {
         "Avoid taking pain medicine more often than the label recommends; frequent use can cause rebound headaches.",
       ],
       next: "Get urgent help for a sudden severe headache, a headache after a head injury, or one with weakness, confusion, fainting, or vision changes.",
+      consider: "Is this a new or unusually severe pattern, or is it similar to headaches you have had before?",
     },
     cough: {
       title: "A cough is a signal, not a diagnosis",
@@ -148,6 +155,62 @@ function Index() {
         "Check with a pharmacist before combining over-the-counter cough products, especially if you take other medicines.",
       ],
       next: "Contact a clinician for a cough lasting more than three weeks, or sooner for breathing trouble, chest pain, coughing blood, or a high fever.",
+      consider: "Have you had fever, breathlessness, chest pain, or a new exposure to smoke or an irritant?",
+    },
+    fever: {
+      title: "The number is only one part of a fever",
+      summary: "A fever is usually a sign that the immune system is responding to an infection or another trigger. Age, duration, other symptoms, and how unwell you feel help determine what to do next.",
+      points: [
+        "Rest, drink fluids, and use a reliable thermometer rather than judging temperature by touch alone.",
+        "Follow the package directions for any fever medicine, and check with a pharmacist if you take other medicines or have a chronic condition.",
+        "Write down the temperature, when it began, and any new symptoms so a clinician can see the pattern.",
+      ],
+      next: "Seek urgent care for confusion, a stiff neck, trouble breathing, severe dehydration, a seizure, or a fever with a rapidly worsening condition.",
+      consider: "How high has the temperature been, how long has it lasted, and what other symptoms are present?",
+    },
+    digestive: {
+      title: "Digestive symptoms are worth tracking as a pattern",
+      summary: "Nausea, stomach pain, and diarrhea can have many causes, from a short-lived infection to food triggers or medicines. Timing, hydration, and severity help separate watchful waiting from a need for care.",
+      points: [
+        "Take small, frequent sips of fluid and return to simple foods as tolerated; avoid forcing food when you feel nauseated.",
+        "Note recent foods, travel, sick contacts, new medicines, and whether symptoms wake you at night.",
+        "Avoid starting anti-diarrheal or anti-nausea medicines without checking that they are appropriate for your symptoms.",
+      ],
+      next: "Get medical help for severe or localized pain, blood or black stools, repeated vomiting, faintness, or signs of dehydration.",
+      consider: "Can you keep fluids down, and have you noticed blood, severe pain, or a clear connection to food or medication?",
+    },
+    stress: {
+      title: "Stress can feel physical, and support can help",
+      summary: "Stress and anxiety can affect sleep, digestion, focus, muscle tension, and heart rate. That does not mean every physical symptom is caused by stress, so the pattern still deserves attention.",
+      points: [
+        "Try one grounding practice for a few minutes: slower exhalations, naming what you can see, or a brief walk without multitasking.",
+        "Protect regular sleep, meals, movement, and contact with people who help you feel safe; basics are treatment, not a test of willpower.",
+        "A clinician or therapist can help when worry is persistent, hard to control, or changing how you work, sleep, or relate to others.",
+      ],
+      next: "If you may hurt yourself, cannot stay safe, or have severe chest pain or trouble breathing, seek urgent help now or contact local emergency services.",
+      consider: "What changed recently, and what would feeling just 10% more supported look like this week?",
+    },
+    skin: {
+      title: "A skin change is best understood over time",
+      summary: "Rashes and itching can follow irritation, allergy, infection, medication, or a number of other causes. Photos and a timeline can be more useful than a single snapshot or label.",
+      points: [
+        "Notice where it started, whether it is spreading, and whether there is pain, warmth, drainage, or a new product or medicine.",
+        "Use gentle, fragrance-free products and avoid scratching; test any new topical product on a small area first.",
+        "Take a dated photo in similar lighting if the change is evolving, and show it to a pharmacist or clinician.",
+      ],
+      next: "Seek urgent help for swelling of the lips or tongue, trouble breathing, blistering, skin peeling, or a rapidly spreading rash with fever.",
+      consider: "Did the change begin after a new medicine, product, food, plant, or illness?",
+    },
+    medication: {
+      title: "Medication questions deserve specific details",
+      summary: "The safest answer depends on the exact medicine, dose, timing, other medicines, and your health history. A pharmacist is often the quickest person to help check interactions and side effects.",
+      points: [
+        "Keep the medicine name, strength, directions, and start date together; a photo of the label can help during a consultation.",
+        "Do not stop a prescribed medicine suddenly or double a missed dose unless the label or a clinician tells you to.",
+        "Ask a pharmacist before adding an over-the-counter medicine, supplement, or herbal product.",
+      ],
+      next: "Call emergency services for trouble breathing, swelling of the face or throat, fainting, a seizure, or a severe reaction after taking a medicine.",
+      consider: "What is the exact name and dose, and what changed after starting, stopping, or missing it?",
     },
     general: {
       title: "A thoughtful answer starts with the full picture",
@@ -158,6 +221,7 @@ function Index() {
         "Bring your notes and questions to a clinician or pharmacist if the concern persists or interferes with daily life.",
       ],
       next: "Seek urgent care for severe or rapidly worsening symptoms, trouble breathing, chest pain, fainting, sudden weakness, or confusion.",
+      consider: "When did this start, and what is the one change or symptom that concerns you most?",
     },
   }[questionKind];
 
@@ -213,8 +277,8 @@ function Index() {
               <section ref={answerRef} className="mt-8 scroll-mt-24 animate-[fadeUp_0.45s_ease-out]" aria-labelledby="answer-title">
                 <div className="mb-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.16em] text-[#0f766e]"><span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#dceddf]"><Check size={13} strokeWidth={3} /></span> Your Clarity answer</div><button type="button" onClick={saveQuestion} className="flex items-center gap-2 self-start rounded-full px-3 py-1.5 text-xs font-semibold text-[#53746d] transition hover:bg-white hover:text-[#0f766e] sm:self-auto">{currentQuestionSaved ? <BookmarkCheck size={15} className="text-[#0f766e]" /> : <Bookmark size={15} />} {currentQuestionSaved ? "Saved to your library" : "Save for later"}</button></div>
                 <div className="grid gap-5 lg:grid-cols-[1fr_290px]">
-                  <article className="overflow-hidden rounded-[26px] border border-[#d8e4dc] bg-white shadow-[0_14px_40px_rgba(40,75,67,0.06)]"><div className="border-b border-[#e6eee7] bg-[#eff7f0] p-6 sm:p-8"><div className="mb-4 flex flex-wrap items-center gap-2"><Badge className="rounded-full border-0 bg-[#d7ecdf] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.13em] text-[#0f766e]">A place to start</Badge><span className="text-xs text-[#759089]">Research reviewed · 5 min read</span></div><p className="mb-2 text-sm font-medium italic text-[#76908a]">“{question.trim()}”</p><h2 id="answer-title" className="max-w-[650px] font-serif text-[32px] font-semibold leading-tight tracking-[-0.035em] text-[#183d3a]">{answerCopy.title}</h2><p className="mt-4 max-w-[700px] text-[16px] leading-7 text-[#4f7068]">{answerCopy.summary}</p></div><div className="p-6 sm:p-8"><h3 className="mb-4 flex items-center gap-2 text-[15px] font-bold text-[#183d3a]"><FileText size={17} className="text-[#0f766e]" /> Helpful things to know</h3><ul className="space-y-4">{answerCopy.points.map((point) => <li key={point} className="flex gap-3 text-[15px] leading-7 text-[#52726b]"><span className="mt-1.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#e8f3e9] text-[#0f766e]"><Check size={12} strokeWidth={3} /></span>{point}</li>)}</ul><div className="mt-7 rounded-2xl border border-[#f3d7c9] bg-[#fff6f0] p-4"><div className="flex gap-3"><TriangleAlert size={18} className="mt-0.5 shrink-0 text-[#d66e54]" /><div><h4 className="text-sm font-bold text-[#8d4939]">When to get more help</h4><p className="mt-1 text-sm leading-6 text-[#885e55]">{answerCopy.next}</p></div></div></div></div></article>
-                  <aside className="space-y-5"><div className="rounded-[23px] border border-[#d8e4dc] bg-white p-5"><div className="mb-4 flex items-center gap-2"><span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#e7f2e8] text-[#0f766e]"><Stethoscope size={16} /></span><h3 className="text-sm font-bold text-[#214b45]">Questions for a clinician</h3></div><p className="text-sm leading-6 text-[#68837c]">“What else could cause this pattern?”</p><p className="mt-3 text-sm leading-6 text-[#68837c]">“What changes should make me follow up?”</p><button type="button" className="mt-4 flex items-center gap-1 text-xs font-bold text-[#0f766e] hover:underline">See conversation guide <ChevronRight size={14} /></button></div><div className="rounded-[23px] border border-[#d8e4dc] bg-[#fbfcf9] p-5"><div className="mb-4 flex items-center justify-between"><div className="flex items-center gap-2"><BookOpen size={17} className="text-[#0f766e]" /><h3 className="text-sm font-bold text-[#214b45]">Sources</h3></div><span className="text-[10px] font-bold uppercase tracking-wider text-[#91a69f]">3 reviewed</span></div><div className="space-y-3">{sourceLinks.map((source) => <a href={source.href} target="_blank" rel="noreferrer" key={source.name} className="group flex items-start justify-between gap-2"><span><span className="block text-xs font-semibold text-[#446a62] group-hover:text-[#0f766e]">{source.name}</span><span className="block text-[11px] text-[#91a69f]">{source.detail}</span></span><ExternalLink size={13} className="mt-0.5 shrink-0 text-[#8ba69e]" /></a>)}</div></div></aside>
+                  <article className="overflow-hidden rounded-[26px] border border-[#d8e4dc] bg-white shadow-[0_14px_40px_rgba(40,75,67,0.06)]"><div className="border-b border-[#e6eee7] bg-[#eff7f0] p-6 sm:p-8"><div className="mb-4 flex flex-wrap items-center gap-2"><Badge className="rounded-full border-0 bg-[#d7ecdf] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.13em] text-[#0f766e]">A place to start</Badge><span className="text-xs text-[#759089]">Curated guidance · 5 min read</span></div><p className="mb-2 text-sm font-medium italic text-[#76908a]">“{question.trim()}”</p><h2 id="answer-title" className="max-w-[650px] font-serif text-[32px] font-semibold leading-tight tracking-[-0.035em] text-[#183d3a]">{answerCopy.title}</h2><p className="mt-4 max-w-[700px] text-[16px] leading-7 text-[#4f7068]">{answerCopy.summary}</p></div><div className="p-6 sm:p-8"><h3 className="mb-4 flex items-center gap-2 text-[15px] font-bold text-[#183d3a]"><FileText size={17} className="text-[#0f766e]" /> Helpful things to know</h3><ul className="space-y-4">{answerCopy.points.map((point) => <li key={point} className="flex gap-3 text-[15px] leading-7 text-[#52726b]"><span className="mt-1.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#e8f3e9] text-[#0f766e]"><Check size={12} strokeWidth={3} /></span>{point}</li>)}</ul><div className="mt-7 rounded-2xl border border-[#f3d7c9] bg-[#fff6f0] p-4"><div className="flex gap-3"><TriangleAlert size={18} className="mt-0.5 shrink-0 text-[#d66e54]" /><div><h4 className="text-sm font-bold text-[#8d4939]">When to get more help</h4><p className="mt-1 text-sm leading-6 text-[#885e55]">{answerCopy.next}</p></div></div></div></div></article>
+                  <aside className="space-y-5"><div className="rounded-[23px] border border-[#d8e4dc] bg-white p-5"><div className="mb-4 flex items-center gap-2"><span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#e7f2e8] text-[#0f766e]"><Stethoscope size={16} /></span><h3 className="text-sm font-bold text-[#214b45]">Questions for a clinician</h3></div><p className="text-sm leading-6 text-[#68837c]">“What else could cause this pattern?”</p><p className="mt-3 text-sm leading-6 text-[#68837c]">“What changes should make me follow up?”</p><p className="mt-3 border-t border-[#e8f0e9] pt-3 text-xs leading-5 text-[#7a948c]"><span className="font-semibold text-[#4f7169]">A useful detail:</span> {answerCopy.consider}</p><button type="button" className="mt-4 flex items-center gap-1 text-xs font-bold text-[#0f766e] hover:underline">See conversation guide <ChevronRight size={14} /></button></div><div className="rounded-[23px] border border-[#d8e4dc] bg-[#fbfcf9] p-5"><div className="mb-4 flex items-center justify-between"><div className="flex items-center gap-2"><BookOpen size={17} className="text-[#0f766e]" /><h3 className="text-sm font-bold text-[#214b45]">Sources</h3></div><span className="text-[10px] font-bold uppercase tracking-wider text-[#91a69f]">3 reviewed</span></div><div className="space-y-3">{sourceLinks.map((source) => <a href={source.href} target="_blank" rel="noreferrer" key={source.name} className="group flex items-start justify-between gap-2"><span><span className="block text-xs font-semibold text-[#446a62] group-hover:text-[#0f766e]">{source.name}</span><span className="block text-[11px] text-[#91a69f]">{source.detail}</span></span><ExternalLink size={13} className="mt-0.5 shrink-0 text-[#8ba69e]" /></a>)}</div></div></aside>
                 </div>
                 <div className="mt-6 flex items-start gap-2 px-1 text-xs leading-5 text-[#8ba09a]"><Info size={14} className="mt-0.5 shrink-0" />Clarity provides general educational information, not a diagnosis or personalized medical advice. If you’re worried about a symptom, a qualified healthcare professional can help.</div>
               </section>
