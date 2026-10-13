@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUpRight,
   BookOpen,
@@ -30,10 +30,12 @@ import {
   UserRound,
   X,
 } from "lucide-react";
+import { Link, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
+import { useSessionContext } from "@/components/SessionContextProvider";
 
 const dailyQuestionSets = [
   ["How can I get better sleep?", "What helps with a tension headache?", "When should I see a doctor for a cough?"],
@@ -188,6 +190,9 @@ function TrustPill({ icon, children }: { icon: React.ReactNode; children: React.
 }
 
 function Index() {
+  const [searchParams] = useSearchParams();
+  const { session, loading: sessionLoading } = useSessionContext();
+  const requestedView = searchParams.get("view");
   const [question, setQuestion] = useState("");
   const [activeView, setActiveView] = useState<"ask" | "saved" | "community" | "care">("ask");
   const [answerVisible, setAnswerVisible] = useState(false);
@@ -207,6 +212,7 @@ function Index() {
   const [communityTitle, setCommunityTitle] = useState("");
   const [communityBody, setCommunityBody] = useState("");
   const [communityTopic, setCommunityTopic] = useState("General");
+  const [communityConsent, setCommunityConsent] = useState(false);
   const [replyName, setReplyName] = useState("Anonymous");
   const [replyBody, setReplyBody] = useState("");
   const [communitySubmitting, setCommunitySubmitting] = useState(false);
@@ -220,7 +226,8 @@ function Index() {
   const askSectionRef = useRef<HTMLElement>(null);
   const buildOnRef = useRef<HTMLTextAreaElement>(null);
 
-  const loadCommunity = async () => {
+  const loadCommunity = useCallback(async () => {
+    if (!session) return;
     setCommunityLoading(true);
     setCommunityError("");
     const { data: questionData, error: questionError } = await supabase
@@ -257,11 +264,15 @@ function Index() {
       replies: replyRows.filter((reply) => reply.question_id === item.id),
     })));
     setCommunityLoading(false);
-  };
+  }, [session]);
 
   useEffect(() => {
-    void loadCommunity();
-  }, []);
+    if (!sessionLoading && session) void loadCommunity();
+  }, [loadCommunity, session, sessionLoading]);
+
+  useEffect(() => {
+    if (requestedView === "community") setActiveView("community");
+  }, [requestedView]);
 
   useEffect(() => {
     const storedQuestions = window.localStorage.getItem("clarity-health-saved");
@@ -361,7 +372,7 @@ function Index() {
 
   const submitCommunityQuestion = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!communityTitle.trim() || !communityBody.trim()) return;
+    if (!session || !communityConsent || !communityTitle.trim() || !communityBody.trim()) return;
     setCommunitySubmitting(true);
     setCommunityError("");
     const { data, error } = await supabase.from("community_questions").insert({
@@ -375,6 +386,7 @@ function Index() {
     } else {
       setCommunityTitle("");
       setCommunityBody("");
+      setCommunityConsent(false);
       setCommunityFormOpen(false);
       await loadCommunity();
       if (data?.id) setSelectedCommunityId(data.id);
@@ -384,7 +396,7 @@ function Index() {
 
   const submitCommunityReply = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!selectedCommunityId || !replyBody.trim()) return;
+    if (!session || !communityConsent || !selectedCommunityId || !replyBody.trim()) return;
     setCommunitySubmitting(true);
     setCommunityError("");
     const { error } = await supabase.from("community_replies").insert({
@@ -396,6 +408,7 @@ function Index() {
       setCommunityError("We couldn’t post that reply. Please check the length and try again.");
     } else {
       setReplyBody("");
+      setCommunityConsent(false);
       await loadCommunity();
     }
     setCommunitySubmitting(false);
@@ -404,10 +417,12 @@ function Index() {
   const selectedCommunityQuestion = communityQuestions.find((item) => item.id === selectedCommunityId) ?? null;
 
   const loadNearbyCare = async (latitude: number, longitude: number, label: string) => {
+    const approximateLatitude = Math.round(latitude * 100) / 100;
+    const approximateLongitude = Math.round(longitude * 100) / 100;
     setCareLoading(true);
     setCareError("");
-    setCareCoordinates({ latitude, longitude, label });
-    const query = `[out:json][timeout:20];(nwr[\"amenity\"=\"doctors\"](around:8000,${latitude},${longitude});nwr[\"amenity\"=\"clinic\"](around:8000,${latitude},${longitude});nwr[\"healthcare\"=\"doctor\"](around:8000,${latitude},${longitude});nwr[\"healthcare\"=\"clinic\"](around:8000,${latitude},${longitude}););out center tags;`;
+    setCareCoordinates({ latitude: approximateLatitude, longitude: approximateLongitude, label });
+    const query = `[out:json][timeout:20];(nwr[\"amenity\"=\"doctors\"](around:8000,${approximateLatitude},${approximateLongitude});nwr[\"amenity\"=\"clinic\"](around:8000,${approximateLatitude},${approximateLongitude});nwr[\"healthcare\"=\"doctor\"](around:8000,${approximateLatitude},${approximateLongitude});nwr[\"healthcare\"=\"clinic\"](around:8000,${approximateLatitude},${approximateLongitude}););out center tags;`;
     try {
       const response = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`);
       if (!response.ok) throw new Error("care-search-failed");
@@ -429,7 +444,7 @@ function Index() {
           longitude: longitudeValue,
           address,
           phone: tags.phone || tags["contact:phone"] || tags["contact:mobile"] || "",
-          distanceKm: distanceBetween(latitude, longitude, latitudeValue, longitudeValue),
+          distanceKm: distanceBetween(approximateLatitude, approximateLongitude, latitudeValue, longitudeValue),
         } satisfies CarePlace;
       }).filter((place): place is CarePlace => place !== null).sort((a, b) => a.distanceKm - b.distanceKm).slice(0, 12);
       setCarePlaces(places);
@@ -697,14 +712,11 @@ function Index() {
             <button onClick={() => setActiveView("saved")} className={`flex items-center gap-2 text-sm font-medium transition-colors ${activeView === "saved" ? "text-[#0f766e]" : "text-[#66807a] hover:text-[#173e3a]"}`}><Bookmark size={15} /> Your library</button>
             <button onClick={() => setActiveView("community")} className={`flex items-center gap-2 text-sm font-medium transition-colors ${activeView === "community" ? "text-[#0f766e]" : "text-[#66807a] hover:text-[#173e3a]"}`}><MessageSquareText size={15} /> Community</button>
             <button onClick={() => setActiveView("care")} className={`flex items-center gap-2 text-sm font-medium transition-colors ${activeView === "care" ? "text-[#0f766e]" : "text-[#66807a] hover:text-[#173e3a]"}`}><MapPin size={15} /> Find care</button>
-            <button onClick={() => setMenuOpen(!menuOpen)} className="relative flex items-center gap-2 rounded-full border border-[#dce7df] bg-white/80 px-3.5 py-2 text-sm font-semibold text-[#35615a] transition hover:border-[#9cc2b7] hover:bg-white">
-              <UserRound size={16} /> Sign in
-              {menuOpen && <span className="absolute right-0 top-12 w-56 rounded-2xl border border-[#dce7df] bg-white p-4 text-left text-xs font-normal text-[#58716c] shadow-[0_16px_40px_rgba(40,75,67,0.13)]"><strong className="mb-1 block text-sm text-[#183d3a]">Keep your answers close</strong>Create an optional account to sync your saved health notes across devices.<span className="mt-3 block font-semibold text-[#0f766e]">Coming soon</span></span>}
-            </button>
+            {session ? <button onClick={() => void supabase.auth.signOut()} className="flex items-center gap-2 rounded-full border border-[#dce7df] bg-white/80 px-3.5 py-2 text-sm font-semibold text-[#35615a] transition hover:border-[#9cc2b7] hover:bg-white"><UserRound size={16} /> Sign out</button> : <Link to="/login" className="flex items-center gap-2 rounded-full border border-[#dce7df] bg-white/80 px-3.5 py-2 text-sm font-semibold text-[#35615a] transition hover:border-[#9cc2b7] hover:bg-white"><UserRound size={16} /> Sign in</Link>}
           </nav>
           <button className="rounded-xl p-2 text-[#39635d] md:hidden" onClick={() => setMenuOpen(!menuOpen)} aria-label="Open menu"><Menu size={22} /></button>
         </div>
-        {menuOpen && <div className="border-t border-[#e3e8df] bg-white px-5 py-3 md:hidden"><div className="mx-auto flex max-w-[1180px] flex-wrap gap-5 text-sm font-medium text-[#4c6b65]"><button onClick={() => { setActiveView("ask"); setMenuOpen(false); }}>Ask a question</button><button onClick={() => { setActiveView("saved"); setMenuOpen(false); }}>Your library</button><button onClick={() => { setActiveView("community"); setMenuOpen(false); }}>Community</button><button onClick={() => { setActiveView("care"); setMenuOpen(false); }}>Find care</button></div></div>}
+        {menuOpen && <div className="border-t border-[#e3e8df] bg-white px-5 py-3 md:hidden"><div className="mx-auto flex max-w-[1180px] flex-wrap gap-5 text-sm font-medium text-[#4c6b65]"><button onClick={() => { setActiveView("ask"); setMenuOpen(false); }}>Ask a question</button><button onClick={() => { setActiveView("saved"); setMenuOpen(false); }}>Your library</button><button onClick={() => { setActiveView("community"); setMenuOpen(false); }}>Community</button><button onClick={() => { setActiveView("care"); setMenuOpen(false); }}>Find care</button>{session ? <button onClick={() => { void supabase.auth.signOut(); setMenuOpen(false); }}>Sign out</button> : <Link to="/login" onClick={() => setMenuOpen(false)}>Sign in</Link>}</div></div>}
       </header>
 
       <main className="mx-auto max-w-[1180px] px-5 pb-20 sm:px-8">
@@ -755,20 +767,27 @@ function Index() {
         ) : activeView === "saved" ? (
           <section className="pb-10 pt-12 md:pt-16"><div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><div className="mb-3 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-[#0f766e]"><History size={15} /> Your private library</div><h1 className="font-serif text-[44px] font-semibold tracking-[-0.05em] text-[#173e3a]">Saved for later<span className="text-[#e2755e]">.</span></h1><p className="mt-3 text-[16px] text-[#718b84]">A quiet place for the questions you want to revisit.</p></div><button onClick={() => { setActiveView("ask"); setAnswerVisible(false); }} className="flex items-center gap-2 self-start rounded-full bg-[#0f766e] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0a655f]"><PenLine size={15} /> Ask something new</button></div>{savedQuestions.length ? <div className="grid gap-4 md:grid-cols-2">{savedQuestions.map((savedQuestion, index) => <div key={savedQuestion} className="group rounded-[23px] border border-[#d8e4dc] bg-white p-5 shadow-[0_8px_25px_rgba(40,75,67,0.04)] transition hover:-translate-y-0.5 hover:shadow-[0_12px_30px_rgba(40,75,67,0.08)]"><div className="mb-6 flex items-center justify-between"><span className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-[#8aa29a]"><Clock3 size={14} /> Saved question 0{index + 1}</span><button onClick={() => { setQuestion(savedQuestion); setSavedQuestions(savedQuestions.filter((item) => item !== savedQuestion)); }} className="rounded-full p-1.5 text-[#9bb0aa] opacity-0 transition hover:bg-[#fff2ed] hover:text-[#d66e54] group-hover:opacity-100" aria-label={`Remove ${savedQuestion}`}><X size={15} /></button></div><p className="font-serif text-[22px] font-semibold leading-snug text-[#234b46]">{savedQuestion}</p><button onClick={() => { setQuestion(savedQuestion); setActiveView("ask"); setAnswerVisible(true); }} className="mt-5 flex items-center gap-1 text-xs font-bold text-[#0f766e]">Open answer <ArrowUpRight size={14} /></button></div>)}</div> : <div className="rounded-[26px] border border-dashed border-[#c9dcd0] bg-white/50 p-12 text-center"><Bookmark size={26} className="mx-auto text-[#8aada0]" /><p className="mt-4 font-serif text-2xl font-semibold text-[#315951]">Your library is waiting.</p><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[#819a91]">Save an answer while you explore and it will show up here in this browser.</p></div>}<div className="mt-8 flex items-start gap-2 text-xs leading-5 text-[#8ba09a]"><ShieldCheck size={14} className="mt-0.5 shrink-0 text-[#0f766e]" />Your saved questions stay in this browser. Create an account later if you’d like to sync them across devices.</div></section>
         ) : activeView === "community" ? (
+          sessionLoading ? (
+            <section className="flex min-h-[440px] items-center justify-center py-16"><div className="flex items-center gap-3 rounded-full border border-[#d8e4dc] bg-white px-5 py-3 text-sm font-semibold text-[#52726b] shadow-sm"><RefreshCw size={17} className="animate-spin text-[#0f766e]" /> Checking your community access…</div></section>
+          ) : !session ? (
+            <section className="mx-auto max-w-2xl py-16"><div className="rounded-[28px] border border-[#d8e4dc] bg-white p-7 text-center shadow-[0_14px_40px_rgba(40,75,67,0.07)] sm:p-10"><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#e7f2e8] text-[#0f766e]"><ShieldCheck size={26} /></div><h1 className="mt-5 font-serif text-[36px] font-semibold tracking-[-0.04em] text-[#183d3a]">The Commons is for signed-in members.</h1><p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-[#68837c]">Sign in before reading or posting community health discussions. This keeps the conversation behind a clear privacy boundary.</p><Link to="/login" className="mt-6 inline-flex items-center gap-2 rounded-full bg-[#0f766e] px-5 py-3 text-sm font-semibold text-white shadow-[0_8px_16px_rgba(15,118,110,0.16)] hover:bg-[#0a655f]">Sign in to continue <ArrowUpRight size={15} /></Link></div></section>
+          ) : (
           <section className="pb-10 pt-12 md:pt-16">
-            <div className="mb-8 flex flex-col justify-between gap-5 sm:flex-row sm:items-end"><div><div className="mb-3 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-[#0f766e]"><MessageSquareText size={15} /> The Clarity Commons</div><h1 className="font-serif text-[44px] font-semibold tracking-[-0.05em] text-[#173e3a]">Ask together<span className="text-[#e2755e]">.</span></h1><p className="mt-3 max-w-xl text-[16px] leading-7 text-[#718b84]">A thoughtful space for real-life health questions, lived experience, and kind replies. Share carefully and protect your privacy.</p></div><div className="flex items-center gap-2"><button type="button" onClick={() => void loadCommunity()} className="flex h-10 items-center gap-2 rounded-full border border-[#d8e4dc] bg-white px-4 text-xs font-semibold text-[#5d7b73] transition hover:border-[#94bdb1] hover:text-[#0f766e]" aria-label="Refresh community"><RefreshCw size={14} /> Refresh</button><button type="button" onClick={() => setCommunityFormOpen(!communityFormOpen)} className="flex h-10 items-center gap-2 rounded-full bg-[#0f766e] px-4 text-xs font-semibold text-white shadow-sm transition hover:bg-[#0a655f]"><Plus size={15} /> Ask the community</button></div></div>
+            <div className="mb-8 flex flex-col justify-between gap-5 sm:flex-row sm:items-end"><div><div className="mb-3 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-[#0f766e]"><MessageSquareText size={15} /> The Clarity Commons</div><h1 className="font-serif text-[44px] font-semibold tracking-[-0.05em] text-[#173e3a]">Ask together<span className="text-[#e2755e]">.</span></h1><p className="mt-3 max-w-xl text-[16px] leading-7 text-[#718b84]">A thoughtful space for real-life health questions, lived experience, and kind replies. Signed-in members can read and participate. Share carefully and protect your privacy.</p></div><div className="flex items-center gap-2"><button type="button" onClick={() => void loadCommunity()} className="flex h-10 items-center gap-2 rounded-full border border-[#d8e4dc] bg-white px-4 text-xs font-semibold text-[#5d7b73] transition hover:border-[#94bdb1] hover:text-[#0f766e]" aria-label="Refresh community"><RefreshCw size={14} /> Refresh</button><button type="button" onClick={() => setCommunityFormOpen(!communityFormOpen)} className="flex h-10 items-center gap-2 rounded-full bg-[#0f766e] px-4 text-xs font-semibold text-white shadow-sm transition hover:bg-[#0a655f]"><Plus size={15} /> Ask the community</button></div></div>
             {communityError && <div className="mb-5 flex items-center justify-between gap-3 rounded-2xl border border-[#f3d7c9] bg-[#fff6f0] px-4 py-3 text-sm text-[#885e55]"><span>{communityError}</span><button type="button" onClick={() => void loadCommunity()} className="shrink-0 font-semibold text-[#b45b47] hover:underline">Try again</button></div>}
             {communityFormOpen && <form onSubmit={submitCommunityQuestion} className="mb-5 rounded-[26px] border border-[#cfe2d5] bg-white p-5 shadow-[0_12px_30px_rgba(40,75,67,0.06)] sm:p-6"><div className="mb-5 flex items-start justify-between gap-4"><div><h2 className="font-serif text-[25px] font-semibold text-[#234b46]">Start a thoughtful thread</h2><p className="mt-1 text-xs leading-5 text-[#78918b]">Do not include names, phone numbers, or other private medical details.</p></div><button type="button" onClick={() => setCommunityFormOpen(false)} className="rounded-full p-1.5 text-[#90a9a0] hover:bg-[#f2f7f2] hover:text-[#0f766e]" aria-label="Close question form"><X size={17} /></button></div><div className="grid gap-4 sm:grid-cols-[1fr_180px]"><label className="text-xs font-semibold text-[#53736b]">Question title<input value={communityTitle} onChange={(event) => setCommunityTitle(event.target.value)} minLength={5} maxLength={180} required placeholder="What would you like to understand?" className="mt-2 h-11 w-full rounded-xl border border-[#d8e4dc] bg-[#fbfcf9] px-3 text-sm font-normal text-[#234b46] outline-none ring-[#0f766e] placeholder:text-[#a7b9b2] focus:ring-2" /></label><label className="text-xs font-semibold text-[#53736b]">Topic<select value={communityTopic} onChange={(event) => setCommunityTopic(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-[#d8e4dc] bg-[#fbfcf9] px-3 text-sm font-normal text-[#234b46] outline-none focus:ring-2 focus:ring-[#0f766e]"><option>General</option><option>Sleep</option><option>Headaches</option><option>Medication</option><option>Mental wellbeing</option></select></label></div><label className="mt-4 block text-xs font-semibold text-[#53736b]">Give a little context<Textarea value={communityBody} onChange={(event) => setCommunityBody(event.target.value)} minLength={20} maxLength={5000} required placeholder="What have you noticed, and what kind of perspective would help?" className="mt-2 min-h-[115px] rounded-xl border-[#d8e4dc] bg-[#fbfcf9] text-sm leading-6 focus-visible:ring-[#0f766e]" /></label><div className="mt-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><label className="text-xs font-semibold text-[#53736b]">Display name<input value={communityName} onChange={(event) => setCommunityName(event.target.value)} maxLength={60} className="ml-2 h-9 w-36 rounded-lg border border-[#d8e4dc] bg-[#fbfcf9] px-2 text-xs font-normal text-[#234b46] outline-none focus:ring-2 focus:ring-[#0f766e]" /></label><button type="submit" disabled={communitySubmitting} className="flex h-10 items-center justify-center gap-2 rounded-full bg-[#0f766e] px-4 text-xs font-semibold text-white hover:bg-[#0a655f] disabled:cursor-wait disabled:opacity-60">{communitySubmitting ? "Posting…" : "Post question"} <Send size={14} /></button></div></form>}
+            <div className="mb-5 rounded-2xl border border-[#dce9df] bg-[#fbfcf9] px-4 py-3"><label className="flex items-start gap-3 text-xs leading-5 text-[#58766e]"><input type="checkbox" checked={communityConsent} onChange={(event) => setCommunityConsent(event.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-[#0f766e]" />I understand that anything I post here will be visible to signed-in community members, and I will not include identifying or private medical information.</label></div>
             <div className="grid gap-5 lg:grid-cols-[350px_1fr]">
               <aside className="rounded-[26px] border border-[#d8e4dc] bg-white p-4 shadow-[0_10px_30px_rgba(40,75,67,0.04)]"><div className="mb-3 flex items-center justify-between px-2"><div><h2 className="font-serif text-[22px] font-semibold text-[#234b46]">Recent questions</h2><p className="mt-1 text-xs text-[#8aa098]">Open conversations from the community</p></div><span className="rounded-full bg-[#eff7f0] px-2.5 py-1 text-[10px] font-bold text-[#0f766e]">{communityQuestions.length}</span></div>{communityLoading ? <div className="space-y-2 p-2"><div className="h-20 animate-pulse rounded-2xl bg-[#f1f6f1]" /><div className="h-20 animate-pulse rounded-2xl bg-[#f1f6f1]" /><div className="h-20 animate-pulse rounded-2xl bg-[#f1f6f1]" /></div> : communityQuestions.length ? <div className="space-y-2">{communityQuestions.map((item) => <button type="button" key={item.id} onClick={() => setSelectedCommunityId(item.id)} className={selectedCommunityId === item.id ? "w-full rounded-2xl border border-[#b9d8c6] bg-[#edf7ef] p-3 text-left" : "w-full rounded-2xl border border-transparent p-3 text-left transition hover:border-[#d8e4dc] hover:bg-[#fbfcf9]"}><div className="mb-2 flex items-center justify-between gap-2"><span className="rounded-full bg-white px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-[#0f766e]">{item.topic}</span><span className="text-[10px] text-[#9aada6]">{formatCommunityDate(item.created_at)}</span></div><p className="line-clamp-2 font-serif text-[17px] font-semibold leading-6 text-[#315951]">{item.title}</p><p className="mt-1 text-xs text-[#78918b]">{item.replies.length} {item.replies.length === 1 ? "reply" : "replies"}</p></button>)}</div> : <div className="rounded-2xl bg-[#fbfcf9] p-6 text-center"><MessageSquareText size={24} className="mx-auto text-[#8aada0]" /><p className="mt-3 font-serif text-lg font-semibold text-[#315951]">Be the first to ask.</p><p className="mt-1 text-xs leading-5 text-[#819a91]">Start a thread and invite a thoughtful reply.</p></div>}</aside>
               {selectedCommunityQuestion ? <article className="rounded-[26px] border border-[#d8e4dc] bg-white p-5 shadow-[0_10px_30px_rgba(40,75,67,0.04)] sm:p-7"><div className="flex items-center justify-between gap-3"><span className="rounded-full bg-[#eff7f0] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.13em] text-[#0f766e]">{selectedCommunityQuestion.topic}</span><span className="text-xs text-[#93a8a0]">{formatCommunityDate(selectedCommunityQuestion.created_at)}</span></div><h2 className="mt-5 font-serif text-[31px] font-semibold leading-tight tracking-[-0.03em] text-[#234b46]">{selectedCommunityQuestion.title}</h2><p className="mt-4 text-[15px] leading-7 text-[#5b786f]">{selectedCommunityQuestion.body}</p><div className="mt-5 flex items-center gap-2 text-xs font-semibold text-[#78918b]"><span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#dceddf] text-[#0f766e]"><UserRound size={14} /></span>{selectedCommunityQuestion.display_name}</div><div className="my-7 h-px bg-[#e9efe9]" /><div className="flex items-center gap-2"><MessageCircle size={17} className="text-[#0f766e]" /><h3 className="font-serif text-[22px] font-semibold text-[#234b46]">Thoughtful replies <span className="font-sans text-sm font-medium text-[#8da39b]">{selectedCommunityQuestion.replies.length}</span></h3></div><div className="mt-5 space-y-4">{selectedCommunityQuestion.replies.length ? selectedCommunityQuestion.replies.map((reply) => <div key={reply.id} className="rounded-2xl bg-[#f5f8f4] p-4"><div className="flex items-center justify-between gap-2"><span className="text-xs font-bold text-[#4c6e65]">{reply.display_name}</span><span className="text-[10px] text-[#9aada6]">{formatCommunityDate(reply.created_at)}</span></div><p className="mt-2 text-sm leading-6 text-[#5b786f]">{reply.body}</p></div>) : <p className="rounded-2xl border border-dashed border-[#cfe0d4] p-5 text-center text-sm text-[#819a91]">No replies yet. Add the first thoughtful perspective.</p>}</div><form onSubmit={submitCommunityReply} className="mt-6 rounded-2xl border border-[#dce9df] bg-[#fbfcf9] p-4"><label className="text-xs font-semibold text-[#53736b]">Join the conversation<Textarea value={replyBody} onChange={(event) => setReplyBody(event.target.value)} minLength={5} maxLength={2500} required placeholder="Share an experience, a helpful question, or a gentle suggestion…" className="mt-2 min-h-[100px] rounded-xl border-[#d8e4dc] bg-white text-sm leading-6 focus-visible:ring-[#0f766e]" /></label><div className="mt-3 flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><label className="text-xs font-semibold text-[#53736b]">Display name<input value={replyName} onChange={(event) => setReplyName(event.target.value)} maxLength={60} className="ml-2 h-9 w-36 rounded-lg border border-[#d8e4dc] bg-white px-2 text-xs font-normal text-[#234b46] outline-none focus:ring-2 focus:ring-[#0f766e]" /></label><button type="submit" disabled={communitySubmitting} className="flex h-10 items-center justify-center gap-2 rounded-full bg-[#0f766e] px-4 text-xs font-semibold text-white hover:bg-[#0a655f] disabled:cursor-wait disabled:opacity-60">{communitySubmitting ? "Posting…" : "Reply"} <Send size={14} /></button></div></form></article> : <div className="flex min-h-[440px] items-center justify-center rounded-[26px] border border-dashed border-[#c9dcd0] bg-white/60 p-10 text-center"><div><MessageSquareText size={30} className="mx-auto text-[#8aada0]" /><h2 className="mt-4 font-serif text-2xl font-semibold text-[#315951]">Choose a question to join in.</h2><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[#819a91]">Read the full context, then add a reply that helps someone feel more informed and less alone.</p></div></div>}
             </div>
-            <p className="mt-6 flex items-start gap-2 text-xs leading-5 text-[#8ba09a]"><ShieldCheck size={14} className="mt-0.5 shrink-0 text-[#0f766e]" />Community replies are personal perspectives, not medical advice. Do not share identifying or private health information.</p>
+            <p className="mt-6 flex items-start gap-2 text-xs leading-5 text-[#8ba09a]"><ShieldCheck size={14} className="mt-0.5 shrink-0 text-[#0f766e]" />Community replies are visible to signed-in members. Do not share identifying or private health information.</p>
           </section>
+          )
         ) : (
           <section className="pb-10 pt-12 md:pt-16">
             <div className="mb-8"><div className="mb-3 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-[#0f766e]"><MapPin size={15} /> Nearby care</div><h1 className="font-serif text-[44px] font-semibold tracking-[-0.05em] text-[#173e3a]">Find care nearby<span className="text-[#e2755e]">.</span></h1><p className="mt-3 max-w-2xl text-[16px] leading-7 text-[#718b84]">Find doctor offices and clinics near you, see their phone numbers when listed, and open directions in a map.</p></div>
-            <div className="rounded-[26px] border border-[#d8e4dc] bg-white p-5 shadow-[0_12px_30px_rgba(40,75,67,0.05)] sm:p-6"><form onSubmit={findCareByLocation} className="flex flex-col gap-3 md:flex-row"><label className="sr-only" htmlFor="care-location">City, ZIP code, or neighborhood</label><input id="care-location" value={careLocation} onChange={(event) => setCareLocation(event.target.value)} placeholder="City, ZIP code, or neighborhood" className="h-12 min-w-0 flex-1 rounded-xl border border-[#d8e4dc] bg-[#fbfcf9] px-4 text-sm text-[#234b46] outline-none placeholder:text-[#a7b9b2] focus:ring-2 focus:ring-[#0f766e]" /><button type="submit" disabled={careLoading || !careLocation.trim()} className="flex h-12 items-center justify-center gap-2 rounded-xl bg-[#0f766e] px-5 text-sm font-semibold text-white hover:bg-[#0a655f] disabled:cursor-wait disabled:bg-[#b8cac3]"><Search size={16} /> Search nearby</button><button type="button" onClick={useMyLocation} disabled={careLoading} className="flex h-12 items-center justify-center gap-2 rounded-xl border border-[#cfe2d5] bg-[#eff7f0] px-4 text-sm font-semibold text-[#0f766e] hover:bg-[#e4f2e7] disabled:opacity-60"><LocateFixed size={16} /> Use my location</button></form><p className="mt-3 flex items-start gap-2 text-xs leading-5 text-[#8ba09a]"><ShieldCheck size={14} className="mt-0.5 shrink-0 text-[#0f766e]" />Your location is used only in this browser to search OpenStreetMap. Clarity does not store it.</p></div>
+            <div className="rounded-[26px] border border-[#d8e4dc] bg-white p-5 shadow-[0_12px_30px_rgba(40,75,67,0.05)] sm:p-6"><form onSubmit={findCareByLocation} className="flex flex-col gap-3 md:flex-row"><label className="sr-only" htmlFor="care-location">City, ZIP code, or neighborhood</label><input id="care-location" value={careLocation} onChange={(event) => setCareLocation(event.target.value)} placeholder="City, ZIP code, or neighborhood" className="h-12 min-w-0 flex-1 rounded-xl border border-[#d8e4dc] bg-[#fbfcf9] px-4 text-sm text-[#234b46] outline-none placeholder:text-[#a7b9b2] focus:ring-2 focus:ring-[#0f766e]" /><button type="submit" disabled={careLoading || !careLocation.trim()} className="flex h-12 items-center justify-center gap-2 rounded-xl bg-[#0f766e] px-5 text-sm font-semibold text-white hover:bg-[#0a655f] disabled:cursor-wait disabled:bg-[#b8cac3]"><Search size={16} /> Search nearby</button><button type="button" onClick={useMyLocation} disabled={careLoading} className="flex h-12 items-center justify-center gap-2 rounded-xl border border-[#cfe2d5] bg-[#eff7f0] px-4 text-sm font-semibold text-[#0f766e] hover:bg-[#e4f2e7] disabled:opacity-60"><LocateFixed size={16} /> Use my location</button></form><p className="mt-3 flex items-start gap-2 text-xs leading-5 text-[#8ba09a]"><ShieldCheck size={14} className="mt-0.5 shrink-0 text-[#0f766e]" />Searches are sent to OpenStreetMap services. Browser location is rounded to an approximate area before nearby listings are requested; Clarity does not store your location.</p></div>
             {careError && <div className="mt-5 rounded-2xl border border-[#f3d7c9] bg-[#fff6f0] px-4 py-3 text-sm text-[#885e55]">{careError}</div>}
             {careLoading && <div className="mt-6 rounded-[26px] border border-[#d8e4dc] bg-white p-8 text-center"><RefreshCw size={22} className="mx-auto animate-spin text-[#0f766e]" /><p className="mt-3 font-serif text-xl font-semibold text-[#315951]">Looking for nearby offices…</p><p className="mt-1 text-sm text-[#819a91]">Checking public map listings and contact details.</p></div>}
             {!careCoordinates && !careLoading && <div className="mt-6 grid gap-5 md:grid-cols-2"><div className="rounded-[26px] bg-[#e9f2e7] p-7"><div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-[#0f766e] shadow-sm"><MapPin size={21} /></div><h2 className="mt-5 font-serif text-[27px] font-semibold tracking-[-0.03em] text-[#234b46]">Start with a place.</h2><p className="mt-3 max-w-md text-sm leading-6 text-[#638078]">Search by city or ZIP code, or let your browser share your approximate location. We’ll show the closest public listings we can find.</p></div><div className="rounded-[26px] border border-[#d8e4dc] bg-white p-7"><div className="flex items-center gap-2 text-[#0f766e]"><Phone size={18} /><span className="text-[11px] font-bold uppercase tracking-[0.14em]">About phone numbers</span></div><h2 className="mt-4 font-serif text-[23px] font-semibold text-[#234b46]">Call before you go.</h2><p className="mt-2 text-sm leading-6 text-[#78918b]">Phone numbers come from public OpenStreetMap listings and may be missing or out of date. Always confirm hours, services, and insurance with the office.</p></div></div>}
