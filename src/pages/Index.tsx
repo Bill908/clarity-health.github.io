@@ -169,9 +169,10 @@ function LogoMark() {
   return (
     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-[#0f766e] shadow-[0_8px_20px_rgba(15,118,110,0.18)]" aria-label="Clarity Health logo">
       <svg viewBox="0 0 48 48" className="h-8 w-8" role="img" aria-hidden="true">
-        <path d="M10.5 10.5h27c2.2 0 4 1.8 4 4v14c0 2.2-1.8 4-4 4H24.2l-7.1 5.1v-5.1h-2.6c-2.2 0-4-1.8-4-4v-14c0-2.2 1.8-4 4-4Z" fill="#f8fbf4" />
-        <path d="M15.5 18.2c3.1-1.8 5.9-1.7 8.5.1v11.1c-2.6-1.8-5.4-1.9-8.5-.1V18.2Zm17 0c-3.1-1.8-5.9-1.7-8.5.1v11.1c2.6-1.8 5.4-1.9 8.5-.1V18.2Z" fill="none" stroke="#0f766e" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
-        <path d="m27.5 13.9 1.5 1.6 3.2-3.2" fill="none" stroke="#f28b72" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.4" />
+        <path d="M24 37C22.5 35.3 11 28.1 11 19.7c0-4.7 3.4-8.2 7.7-8.2 2.4 0 4.4 1.2 5.3 3.2.9-2 2.9-3.2 5.3-3.2 4.3 0 7.7 3.5 7.7 8.2C37 28.1 25.5 35.3 24 37Z" fill="#f8fbf4" />
+        <path d="M12.8 23.2h5.4l2.1-5.2 3.6 11 3.2-7.6 2.1 3.3h5.9" fill="none" stroke="#0f766e" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" />
+        <circle cx="35.5" cy="12.5" r="5" fill="#f28b72" />
+        <path d="M35.5 9.9v5.2m-2.6-2.6h5.2" stroke="#fffaf4" strokeLinecap="round" strokeWidth="1.7" />
       </svg>
     </div>
   );
