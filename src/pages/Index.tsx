@@ -12,10 +12,13 @@ import {
   HeartPulse,
   History,
   Info,
+  LocateFixed,
+  MapPin,
   Menu,
   MessageCircle,
   MessageSquareText,
   PenLine,
+  Phone,
   Plus,
   RefreshCw,
   Search,
@@ -53,6 +56,9 @@ type QuestionKind = "sleep" | "headache" | "cough" | "fever" | "digestive" | "st
 type FollowUp = { question: string; answer: string };
 type CommunityReply = { id: string; question_id: string; display_name: string; body: string; created_at: string };
 type CommunityQuestion = { id: string; display_name: string; title: string; body: string; topic: string; created_at: string; replies: CommunityReply[] };
+type CareCoordinates = { latitude: number; longitude: number; label: string };
+type CarePlace = { id: string; name: string; latitude: number; longitude: number; address: string; phone: string; distanceKm: number };
+type OverpassElement = { id: number; lat?: number; lon?: number; center?: { lat: number; lon: number }; tags?: Record<string, string> };
 
 const followUpGuidance: Record<QuestionKind, FollowUp[]> = {
   sleep: [
@@ -97,6 +103,18 @@ function formatCommunityDate(value: string) {
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date(value));
 }
 
+function distanceBetween(latitudeA: number, longitudeA: number, latitudeB: number, longitudeB: number) {
+  const earthRadiusKm = 6371;
+  const latitudeDelta = (latitudeB - latitudeA) * Math.PI / 180;
+  const longitudeDelta = (longitudeB - longitudeA) * Math.PI / 180;
+  const a = Math.sin(latitudeDelta / 2) ** 2 + Math.cos(latitudeA * Math.PI / 180) * Math.cos(latitudeB * Math.PI / 180) * Math.sin(longitudeDelta / 2) ** 2;
+  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function formatPhoneHref(phone: string) {
+  return phone.replace(/[^0-9+().#\-\s]/g, "");
+}
+
 function LogoMark() {
   return (
     <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-[#0f766e] text-white shadow-[0_8px_20px_rgba(15,118,110,0.18)]">
@@ -119,7 +137,7 @@ function TrustPill({ icon, children }: { icon: React.ReactNode; children: React.
 
 function Index() {
   const [question, setQuestion] = useState("");
-  const [activeView, setActiveView] = useState<"ask" | "saved" | "community">("ask");
+  const [activeView, setActiveView] = useState<"ask" | "saved" | "community" | "care">("ask");
   const [answerVisible, setAnswerVisible] = useState(false);
   const [savedQuestions, setSavedQuestions] = useState<string[]>(initialSaved);
   const [selectedFollowUp, setSelectedFollowUp] = useState<FollowUp | null>(null);
@@ -137,6 +155,11 @@ function Index() {
   const [replyName, setReplyName] = useState("Anonymous");
   const [replyBody, setReplyBody] = useState("");
   const [communitySubmitting, setCommunitySubmitting] = useState(false);
+  const [careLocation, setCareLocation] = useState("");
+  const [careCoordinates, setCareCoordinates] = useState<CareCoordinates | null>(null);
+  const [carePlaces, setCarePlaces] = useState<CarePlace[]>([]);
+  const [careLoading, setCareLoading] = useState(false);
+  const [careError, setCareError] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const answerRef = useRef<HTMLDivElement>(null);
   const buildOnRef = useRef<HTMLTextAreaElement>(null);
@@ -300,6 +323,86 @@ function Index() {
 
   const selectedCommunityQuestion = communityQuestions.find((item) => item.id === selectedCommunityId) ?? null;
 
+  const loadNearbyCare = async (latitude: number, longitude: number, label: string) => {
+    setCareLoading(true);
+    setCareError("");
+    setCareCoordinates({ latitude, longitude, label });
+    const query = `[out:json][timeout:20];(nwr[\"amenity\"=\"doctors\"](around:8000,${latitude},${longitude});nwr[\"amenity\"=\"clinic\"](around:8000,${latitude},${longitude});nwr[\"healthcare\"=\"doctor\"](around:8000,${latitude},${longitude});nwr[\"healthcare\"=\"clinic\"](around:8000,${latitude},${longitude}););out center tags;`;
+    try {
+      const response = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`);
+      if (!response.ok) throw new Error("care-search-failed");
+      const payload = await response.json() as { elements?: OverpassElement[] };
+      const seen = new Set<string>();
+      const places = (payload.elements ?? []).map((item) => {
+        const latitudeValue = item.lat ?? item.center?.lat;
+        const longitudeValue = item.lon ?? item.center?.lon;
+        if (latitudeValue === undefined || longitudeValue === undefined) return null;
+        const tags = item.tags ?? {};
+        const key = `${item.id}-${latitudeValue}-${longitudeValue}`;
+        if (seen.has(key)) return null;
+        seen.add(key);
+        const address = [tags["addr:housenumber"], tags["addr:street"], tags["addr:city"], tags["addr:postcode"]].filter(Boolean).join(" ") || "Address not listed";
+        return {
+          id: key,
+          name: tags.name || tags["name:en"] || "Doctor office",
+          latitude: latitudeValue,
+          longitude: longitudeValue,
+          address,
+          phone: tags.phone || tags["contact:phone"] || tags["contact:mobile"] || "",
+          distanceKm: distanceBetween(latitude, longitude, latitudeValue, longitudeValue),
+        } satisfies CarePlace;
+      }).filter((place): place is CarePlace => place !== null).sort((a, b) => a.distanceKm - b.distanceKm).slice(0, 12);
+      setCarePlaces(places);
+      if (!places.length) setCareError("No nearby offices were listed in OpenStreetMap. Try searching a larger town or city.");
+    } catch {
+      setCarePlaces([]);
+      setCareError("We couldn’t load nearby offices right now. You can still search the map directly.");
+    } finally {
+      setCareLoading(false);
+    }
+  };
+
+  const findCareByLocation = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!careLocation.trim()) return;
+    setCareLoading(true);
+    setCareError("");
+    try {
+      const response = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(careLocation.trim())}`);
+      if (!response.ok) throw new Error("location-search-failed");
+      const results = await response.json() as Array<{ lat: string; lon: string; display_name: string }>;
+      const result = results[0];
+      if (!result) throw new Error("location-not-found");
+      await loadNearbyCare(Number(result.lat), Number(result.lon), result.display_name.split(",").slice(0, 2).join(","));
+    } catch {
+      setCareLoading(false);
+      setCareError("We couldn’t find that location. Try a city, ZIP code, or neighborhood.");
+    }
+  };
+
+  const useMyLocation = () => {
+    if (!navigator.geolocation) {
+      setCareError("Location services are not available in this browser. Search for a city instead.");
+      return;
+    }
+    setCareLoading(true);
+    setCareError("");
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => void loadNearbyCare(coords.latitude, coords.longitude, "Your location"),
+      () => {
+        setCareLoading(false);
+        setCareError("We couldn’t access your location. Search for a city or ZIP code instead.");
+      },
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 },
+    );
+  };
+
+  const careMapUrl = careCoordinates ? (() => {
+    const delta = 0.035;
+    const { latitude, longitude } = careCoordinates;
+    return `https://www.openstreetmap.org/export/embed.html?bbox=${longitude - delta}%2C${latitude - delta}%2C${longitude + delta}%2C${latitude + delta}&layer=mapnik&marker=${latitude}%2C${longitude}`;
+  })() : "";
+
   const answerCopy = {
     sleep: {
       title: "Small changes can make sleep feel easier",
@@ -414,6 +517,7 @@ function Index() {
             <button onClick={() => { setActiveView("ask"); setAnswerVisible(false); }} className={`text-sm font-medium transition-colors ${activeView === "ask" ? "text-[#0f766e]" : "text-[#66807a] hover:text-[#173e3a]"}`}>Ask a question</button>
             <button onClick={() => setActiveView("saved")} className={`flex items-center gap-2 text-sm font-medium transition-colors ${activeView === "saved" ? "text-[#0f766e]" : "text-[#66807a] hover:text-[#173e3a]"}`}><Bookmark size={15} /> Your library</button>
             <button onClick={() => setActiveView("community")} className={`flex items-center gap-2 text-sm font-medium transition-colors ${activeView === "community" ? "text-[#0f766e]" : "text-[#66807a] hover:text-[#173e3a]"}`}><MessageSquareText size={15} /> Community</button>
+            <button onClick={() => setActiveView("care")} className={`flex items-center gap-2 text-sm font-medium transition-colors ${activeView === "care" ? "text-[#0f766e]" : "text-[#66807a] hover:text-[#173e3a]"}`}><MapPin size={15} /> Find care</button>
             <button onClick={() => setMenuOpen(!menuOpen)} className="relative flex items-center gap-2 rounded-full border border-[#dce7df] bg-white/80 px-3.5 py-2 text-sm font-semibold text-[#35615a] transition hover:border-[#9cc2b7] hover:bg-white">
               <UserRound size={16} /> Sign in
               {menuOpen && <span className="absolute right-0 top-12 w-56 rounded-2xl border border-[#dce7df] bg-white p-4 text-left text-xs font-normal text-[#58716c] shadow-[0_16px_40px_rgba(40,75,67,0.13)]"><strong className="mb-1 block text-sm text-[#183d3a]">Keep your answers close</strong>Create an optional account to sync your saved health notes across devices.<span className="mt-3 block font-semibold text-[#0f766e]">Coming soon</span></span>}
@@ -421,7 +525,7 @@ function Index() {
           </nav>
           <button className="rounded-xl p-2 text-[#39635d] md:hidden" onClick={() => setMenuOpen(!menuOpen)} aria-label="Open menu"><Menu size={22} /></button>
         </div>
-        {menuOpen && <div className="border-t border-[#e3e8df] bg-white px-5 py-3 md:hidden"><div className="mx-auto flex max-w-[1180px] flex-wrap gap-5 text-sm font-medium text-[#4c6b65]"><button onClick={() => { setActiveView("ask"); setMenuOpen(false); }}>Ask a question</button><button onClick={() => { setActiveView("saved"); setMenuOpen(false); }}>Your library</button><button onClick={() => { setActiveView("community"); setMenuOpen(false); }}>Community</button></div></div>}
+        {menuOpen && <div className="border-t border-[#e3e8df] bg-white px-5 py-3 md:hidden"><div className="mx-auto flex max-w-[1180px] flex-wrap gap-5 text-sm font-medium text-[#4c6b65]"><button onClick={() => { setActiveView("ask"); setMenuOpen(false); }}>Ask a question</button><button onClick={() => { setActiveView("saved"); setMenuOpen(false); }}>Your library</button><button onClick={() => { setActiveView("community"); setMenuOpen(false); }}>Community</button><button onClick={() => { setActiveView("care"); setMenuOpen(false); }}>Find care</button></div></div>}
       </header>
 
       <main className="mx-auto max-w-[1180px] px-5 pb-20 sm:px-8">
@@ -457,7 +561,7 @@ function Index() {
 <div className="mb-5 rounded-[23px] border border-[#d8e4dc] bg-white p-4 shadow-[0_8px_25px_rgba(40,75,67,0.04)] sm:p-5"><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><div className="flex items-start gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#e7f2e8] text-[#0f766e]"><PenLine size={17} /></span><div><h3 className="text-sm font-bold text-[#214b45]">Build on this question</h3><p className="mt-1 text-xs leading-5 text-[#78918b]">Keep the context and ask for the next layer of detail.</p></div></div><button type="button" onClick={() => setBuildOnOpen(!buildOnOpen)} className="flex items-center gap-2 self-start rounded-full border border-[#cfe2d5] px-3.5 py-2 text-xs font-bold text-[#0f766e] transition hover:bg-[#eff7f0] sm:self-auto">{buildOnOpen ? <X size={14} /> : <Plus size={14} />} {buildOnOpen ? "Close" : "Continue this question"}</button></div>{buildOnOpen && <form onSubmit={buildOnQuestion} className="mt-4 border-t border-[#e8f0e9] pt-4"><Textarea ref={buildOnRef} value={buildOnDraft} onChange={(event) => setBuildOnDraft(event.target.value)} required maxLength={500} placeholder="e.g. What should I watch for over the next few days?" className="min-h-[88px] rounded-xl border-[#d8e4dc] bg-[#fbfcf9] text-sm leading-6 focus-visible:ring-[#0f766e]" aria-label="Build on your question" /><div className="mt-3 flex justify-end"><Button type="submit" disabled={!buildOnDraft.trim()} className="h-10 rounded-full bg-[#0f766e] px-4 text-xs font-semibold text-white hover:bg-[#0a655f] disabled:bg-[#b8cac3]">Ask this follow-up <ArrowUpRight size={14} className="ml-1" /></Button></div></form>}</div>
                 <div className="grid gap-5 lg:grid-cols-[1fr_290px]">
                   <article className="overflow-hidden rounded-[26px] border border-[#d8e4dc] bg-white shadow-[0_14px_40px_rgba(40,75,67,0.06)]"><div className="border-b border-[#e6eee7] bg-[#eff7f0] p-6 sm:p-8"><div className="mb-4 flex flex-wrap items-center gap-2"><Badge className="rounded-full border-0 bg-[#d7ecdf] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.13em] text-[#0f766e]">A place to start</Badge><span className="text-xs text-[#759089]">Curated guidance · 5 min read</span></div><p className="mb-2 text-sm font-medium italic text-[#76908a]">“{question.trim()}”</p><h2 id="answer-title" className="max-w-[650px] font-serif text-[32px] font-semibold leading-tight tracking-[-0.035em] text-[#183d3a]">{answerCopy.title}</h2><p className="mt-4 max-w-[700px] text-[16px] leading-7 text-[#4f7068]">{answerCopy.summary}</p></div><div className="p-6 sm:p-8"><h3 className="mb-4 flex items-center gap-2 text-[15px] font-bold text-[#183d3a]"><FileText size={17} className="text-[#0f766e]" /> Helpful things to know</h3><ul className="space-y-4">{answerCopy.points.map((point) => <li key={point} className="flex gap-3 text-[15px] leading-7 text-[#52726b]"><span className="mt-1.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#e8f3e9] text-[#0f766e]"><Check size={12} strokeWidth={3} /></span>{point}</li>)}</ul><div className="mt-7 rounded-2xl border border-[#f3d7c9] bg-[#fff6f0] p-4"><div className="flex gap-3"><TriangleAlert size={18} className="mt-0.5 shrink-0 text-[#d66e54]" /><div><h4 className="text-sm font-bold text-[#8d4939]">When to get more help</h4><p className="mt-1 text-sm leading-6 text-[#885e55]">{answerCopy.next}</p></div></div></div></div></article>
-                  <aside className="space-y-5"><div className="rounded-[23px] border border-[#d8e4dc] bg-white p-5"><div className="mb-4 flex items-center gap-2"><span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#e7f2e8] text-[#0f766e]"><Stethoscope size={16} /></span><h3 className="text-sm font-bold text-[#214b45]">Questions for a clinician</h3></div><p className="text-sm leading-6 text-[#68837c]">“What else could cause this pattern?”</p><p className="mt-3 text-sm leading-6 text-[#68837c]">“What changes should make me follow up?”</p><p className="mt-3 border-t border-[#e8f0e9] pt-3 text-xs leading-5 text-[#7a948c]"><span className="font-semibold text-[#4f7169]">A useful detail:</span> {answerCopy.consider}</p><button type="button" className="mt-4 flex items-center gap-1 text-xs font-bold text-[#0f766e] hover:underline">See conversation guide <ChevronRight size={14} /></button></div><div className="rounded-[23px] border border-[#d8e4dc] bg-[#fbfcf9] p-5"><div className="mb-4 flex items-center justify-between"><div className="flex items-center gap-2"><BookOpen size={17} className="text-[#0f766e]" /><h3 className="text-sm font-bold text-[#214b45]">Sources</h3></div><span className="text-[10px] font-bold uppercase tracking-wider text-[#91a69f]">3 reviewed</span></div><div className="space-y-3">{sourceLinks.map((source) => <a href={source.href} target="_blank" rel="noreferrer" key={source.name} className="group flex items-start justify-between gap-2"><span><span className="block text-xs font-semibold text-[#446a62] group-hover:text-[#0f766e]">{source.name}</span><span className="block text-[11px] text-[#91a69f]">{source.detail}</span></span><ExternalLink size={13} className="mt-0.5 shrink-0 text-[#8ba69e]" /></a>)}</div></div></aside>
+                  <aside className="space-y-5"><div className="rounded-[23px] border border-[#d8e4dc] bg-white p-5"><div className="mb-4 flex items-center gap-2"><span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#e7f2e8] text-[#0f766e]"><Stethoscope size={16} /></span><h3 className="text-sm font-bold text-[#214b45]">Questions for a clinician</h3></div><p className="text-sm leading-6 text-[#68837c]">“What else could cause this pattern?”</p><p className="mt-3 text-sm leading-6 text-[#68837c]">“What changes should make me follow up?”</p><p className="mt-3 border-t border-[#e8f0e9] pt-3 text-xs leading-5 text-[#7a948c]"><span className="font-semibold text-[#4f7169]">A useful detail:</span> {answerCopy.consider}</p><a href="https://www.ahrq.gov/questions/index.html" target="_blank" rel="noreferrer" className="mt-4 flex items-center gap-1 text-xs font-bold text-[#0f766e] hover:underline">See conversation guide <ChevronRight size={14} /></a></div><div className="rounded-[23px] border border-[#d8e4dc] bg-[#fbfcf9] p-5"><div className="mb-4 flex items-center justify-between"><div className="flex items-center gap-2"><BookOpen size={17} className="text-[#0f766e]" /><h3 className="text-sm font-bold text-[#214b45]">Sources</h3></div><span className="text-[10px] font-bold uppercase tracking-wider text-[#91a69f]">3 reviewed</span></div><div className="space-y-3">{sourceLinks.map((source) => <a href={source.href} target="_blank" rel="noreferrer" key={source.name} className="group flex items-start justify-between gap-2"><span><span className="block text-xs font-semibold text-[#446a62] group-hover:text-[#0f766e]">{source.name}</span><span className="block text-[11px] text-[#91a69f]">{source.detail}</span></span><ExternalLink size={13} className="mt-0.5 shrink-0 text-[#8ba69e]" /></a>)}</div></div></aside>
                 </div>
                 <div className="mt-6 rounded-[23px] border border-[#d8e4dc] bg-[#fbfcf9] p-5 sm:p-6"><div className="flex items-start gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#e7f2e8] text-[#0f766e]"><MessageCircle size={17} /></span><div><h3 className="text-sm font-bold text-[#214b45]">Have a follow-up?</h3><p className="mt-1 text-xs leading-5 text-[#78918b]">Choose a detail and we’ll take the next step with you.</p></div></div><div className="mt-4 flex flex-wrap gap-2">{followUps.map((followUp) => <button type="button" key={followUp.question} onClick={() => setSelectedFollowUp(followUp)} className={`rounded-full border px-3.5 py-2 text-xs font-semibold transition ${selectedFollowUp?.question === followUp.question ? "border-[#0f766e] bg-[#e6f3eb] text-[#0f766e]" : "border-[#d8e4dc] bg-white text-[#5f7b74] hover:border-[#8dbeb1] hover:text-[#0f766e]"}`}>{followUp.question}</button>)}</div>{selectedFollowUp && <div className="mt-4 rounded-2xl border border-[#e3eee5] bg-white p-4"><div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-[#0f766e]"><Sparkles size={13} /> A more specific next step</div><p className="mt-2 text-sm leading-6 text-[#52726b]">{selectedFollowUp.answer}</p></div>}</div>
                 <div className="mt-6 flex items-start gap-2 px-1 text-xs leading-5 text-[#8ba09a]"><Info size={14} className="mt-0.5 shrink-0" />Clarity provides general educational information, not a diagnosis or personalized medical advice. If you’re worried about a symptom, a qualified healthcare professional can help.</div>
@@ -471,7 +575,7 @@ function Index() {
           </>
         ) : activeView === "saved" ? (
           <section className="pb-10 pt-12 md:pt-16"><div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><div className="mb-3 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-[#0f766e]"><History size={15} /> Your private library</div><h1 className="font-serif text-[44px] font-semibold tracking-[-0.05em] text-[#173e3a]">Saved for later<span className="text-[#e2755e]">.</span></h1><p className="mt-3 text-[16px] text-[#718b84]">A quiet place for the questions you want to revisit.</p></div><button onClick={() => { setActiveView("ask"); setAnswerVisible(false); }} className="flex items-center gap-2 self-start rounded-full bg-[#0f766e] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0a655f]"><PenLine size={15} /> Ask something new</button></div>{savedQuestions.length ? <div className="grid gap-4 md:grid-cols-2">{savedQuestions.map((savedQuestion, index) => <div key={savedQuestion} className="group rounded-[23px] border border-[#d8e4dc] bg-white p-5 shadow-[0_8px_25px_rgba(40,75,67,0.04)] transition hover:-translate-y-0.5 hover:shadow-[0_12px_30px_rgba(40,75,67,0.08)]"><div className="mb-6 flex items-center justify-between"><span className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-[#8aa29a]"><Clock3 size={14} /> Saved question 0{index + 1}</span><button onClick={() => { setQuestion(savedQuestion); setSavedQuestions(savedQuestions.filter((item) => item !== savedQuestion)); }} className="rounded-full p-1.5 text-[#9bb0aa] opacity-0 transition hover:bg-[#fff2ed] hover:text-[#d66e54] group-hover:opacity-100" aria-label={`Remove ${savedQuestion}`}><X size={15} /></button></div><p className="font-serif text-[22px] font-semibold leading-snug text-[#234b46]">{savedQuestion}</p><button onClick={() => { setQuestion(savedQuestion); setActiveView("ask"); setAnswerVisible(true); }} className="mt-5 flex items-center gap-1 text-xs font-bold text-[#0f766e]">Open answer <ArrowUpRight size={14} /></button></div>)}</div> : <div className="rounded-[26px] border border-dashed border-[#c9dcd0] bg-white/50 p-12 text-center"><Bookmark size={26} className="mx-auto text-[#8aada0]" /><p className="mt-4 font-serif text-2xl font-semibold text-[#315951]">Your library is waiting.</p><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[#819a91]">Save an answer while you explore and it will show up here in this browser.</p></div>}<div className="mt-8 flex items-start gap-2 text-xs leading-5 text-[#8ba09a]"><ShieldCheck size={14} className="mt-0.5 shrink-0 text-[#0f766e]" />Your saved questions stay in this browser. Create an account later if you’d like to sync them across devices.</div></section>
-        ) : (
+        ) : activeView === "community" ? (
           <section className="pb-10 pt-12 md:pt-16">
             <div className="mb-8 flex flex-col justify-between gap-5 sm:flex-row sm:items-end"><div><div className="mb-3 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-[#0f766e]"><MessageSquareText size={15} /> The Clarity Commons</div><h1 className="font-serif text-[44px] font-semibold tracking-[-0.05em] text-[#173e3a]">Ask together<span className="text-[#e2755e]">.</span></h1><p className="mt-3 max-w-xl text-[16px] leading-7 text-[#718b84]">A thoughtful space for real-life health questions, lived experience, and kind replies. Share carefully and protect your privacy.</p></div><div className="flex items-center gap-2"><button type="button" onClick={() => void loadCommunity()} className="flex h-10 items-center gap-2 rounded-full border border-[#d8e4dc] bg-white px-4 text-xs font-semibold text-[#5d7b73] transition hover:border-[#94bdb1] hover:text-[#0f766e]" aria-label="Refresh community"><RefreshCw size={14} /> Refresh</button><button type="button" onClick={() => setCommunityFormOpen(!communityFormOpen)} className="flex h-10 items-center gap-2 rounded-full bg-[#0f766e] px-4 text-xs font-semibold text-white shadow-sm transition hover:bg-[#0a655f]"><Plus size={15} /> Ask the community</button></div></div>
             {communityError && <div className="mb-5 flex items-center justify-between gap-3 rounded-2xl border border-[#f3d7c9] bg-[#fff6f0] px-4 py-3 text-sm text-[#885e55]"><span>{communityError}</span><button type="button" onClick={() => void loadCommunity()} className="shrink-0 font-semibold text-[#b45b47] hover:underline">Try again</button></div>}
@@ -481,6 +585,15 @@ function Index() {
               {selectedCommunityQuestion ? <article className="rounded-[26px] border border-[#d8e4dc] bg-white p-5 shadow-[0_10px_30px_rgba(40,75,67,0.04)] sm:p-7"><div className="flex items-center justify-between gap-3"><span className="rounded-full bg-[#eff7f0] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.13em] text-[#0f766e]">{selectedCommunityQuestion.topic}</span><span className="text-xs text-[#93a8a0]">{formatCommunityDate(selectedCommunityQuestion.created_at)}</span></div><h2 className="mt-5 font-serif text-[31px] font-semibold leading-tight tracking-[-0.03em] text-[#234b46]">{selectedCommunityQuestion.title}</h2><p className="mt-4 text-[15px] leading-7 text-[#5b786f]">{selectedCommunityQuestion.body}</p><div className="mt-5 flex items-center gap-2 text-xs font-semibold text-[#78918b]"><span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#dceddf] text-[#0f766e]"><UserRound size={14} /></span>{selectedCommunityQuestion.display_name}</div><div className="my-7 h-px bg-[#e9efe9]" /><div className="flex items-center gap-2"><MessageCircle size={17} className="text-[#0f766e]" /><h3 className="font-serif text-[22px] font-semibold text-[#234b46]">Thoughtful replies <span className="font-sans text-sm font-medium text-[#8da39b]">{selectedCommunityQuestion.replies.length}</span></h3></div><div className="mt-5 space-y-4">{selectedCommunityQuestion.replies.length ? selectedCommunityQuestion.replies.map((reply) => <div key={reply.id} className="rounded-2xl bg-[#f5f8f4] p-4"><div className="flex items-center justify-between gap-2"><span className="text-xs font-bold text-[#4c6e65]">{reply.display_name}</span><span className="text-[10px] text-[#9aada6]">{formatCommunityDate(reply.created_at)}</span></div><p className="mt-2 text-sm leading-6 text-[#5b786f]">{reply.body}</p></div>) : <p className="rounded-2xl border border-dashed border-[#cfe0d4] p-5 text-center text-sm text-[#819a91]">No replies yet. Add the first thoughtful perspective.</p>}</div><form onSubmit={submitCommunityReply} className="mt-6 rounded-2xl border border-[#dce9df] bg-[#fbfcf9] p-4"><label className="text-xs font-semibold text-[#53736b]">Join the conversation<Textarea value={replyBody} onChange={(event) => setReplyBody(event.target.value)} minLength={5} maxLength={2500} required placeholder="Share an experience, a helpful question, or a gentle suggestion…" className="mt-2 min-h-[100px] rounded-xl border-[#d8e4dc] bg-white text-sm leading-6 focus-visible:ring-[#0f766e]" /></label><div className="mt-3 flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><label className="text-xs font-semibold text-[#53736b]">Display name<input value={replyName} onChange={(event) => setReplyName(event.target.value)} maxLength={60} className="ml-2 h-9 w-36 rounded-lg border border-[#d8e4dc] bg-white px-2 text-xs font-normal text-[#234b46] outline-none focus:ring-2 focus:ring-[#0f766e]" /></label><button type="submit" disabled={communitySubmitting} className="flex h-10 items-center justify-center gap-2 rounded-full bg-[#0f766e] px-4 text-xs font-semibold text-white hover:bg-[#0a655f] disabled:cursor-wait disabled:opacity-60">{communitySubmitting ? "Posting…" : "Reply"} <Send size={14} /></button></div></form></article> : <div className="flex min-h-[440px] items-center justify-center rounded-[26px] border border-dashed border-[#c9dcd0] bg-white/60 p-10 text-center"><div><MessageSquareText size={30} className="mx-auto text-[#8aada0]" /><h2 className="mt-4 font-serif text-2xl font-semibold text-[#315951]">Choose a question to join in.</h2><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[#819a91]">Read the full context, then add a reply that helps someone feel more informed and less alone.</p></div></div>}
             </div>
             <p className="mt-6 flex items-start gap-2 text-xs leading-5 text-[#8ba09a]"><ShieldCheck size={14} className="mt-0.5 shrink-0 text-[#0f766e]" />Community replies are personal perspectives, not medical advice. Do not share identifying or private health information.</p>
+          </section>
+        ) : (
+          <section className="pb-10 pt-12 md:pt-16">
+            <div className="mb-8"><div className="mb-3 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-[#0f766e]"><MapPin size={15} /> Nearby care</div><h1 className="font-serif text-[44px] font-semibold tracking-[-0.05em] text-[#173e3a]">Find care nearby<span className="text-[#e2755e]">.</span></h1><p className="mt-3 max-w-2xl text-[16px] leading-7 text-[#718b84]">Find doctor offices and clinics near you, see their phone numbers when listed, and open directions in a map.</p></div>
+            <div className="rounded-[26px] border border-[#d8e4dc] bg-white p-5 shadow-[0_12px_30px_rgba(40,75,67,0.05)] sm:p-6"><form onSubmit={findCareByLocation} className="flex flex-col gap-3 md:flex-row"><label className="sr-only" htmlFor="care-location">City, ZIP code, or neighborhood</label><input id="care-location" value={careLocation} onChange={(event) => setCareLocation(event.target.value)} placeholder="City, ZIP code, or neighborhood" className="h-12 min-w-0 flex-1 rounded-xl border border-[#d8e4dc] bg-[#fbfcf9] px-4 text-sm text-[#234b46] outline-none placeholder:text-[#a7b9b2] focus:ring-2 focus:ring-[#0f766e]" /><button type="submit" disabled={careLoading || !careLocation.trim()} className="flex h-12 items-center justify-center gap-2 rounded-xl bg-[#0f766e] px-5 text-sm font-semibold text-white hover:bg-[#0a655f] disabled:cursor-wait disabled:bg-[#b8cac3]"><Search size={16} /> Search nearby</button><button type="button" onClick={useMyLocation} disabled={careLoading} className="flex h-12 items-center justify-center gap-2 rounded-xl border border-[#cfe2d5] bg-[#eff7f0] px-4 text-sm font-semibold text-[#0f766e] hover:bg-[#e4f2e7] disabled:opacity-60"><LocateFixed size={16} /> Use my location</button></form><p className="mt-3 flex items-start gap-2 text-xs leading-5 text-[#8ba09a]"><ShieldCheck size={14} className="mt-0.5 shrink-0 text-[#0f766e]" />Your location is used only in this browser to search OpenStreetMap. Clarity does not store it.</p></div>
+            {careError && <div className="mt-5 rounded-2xl border border-[#f3d7c9] bg-[#fff6f0] px-4 py-3 text-sm text-[#885e55]">{careError}</div>}
+            {careLoading && <div className="mt-6 rounded-[26px] border border-[#d8e4dc] bg-white p-8 text-center"><RefreshCw size={22} className="mx-auto animate-spin text-[#0f766e]" /><p className="mt-3 font-serif text-xl font-semibold text-[#315951]">Looking for nearby offices…</p><p className="mt-1 text-sm text-[#819a91]">Checking public map listings and contact details.</p></div>}
+            {!careCoordinates && !careLoading && <div className="mt-6 grid gap-5 md:grid-cols-2"><div className="rounded-[26px] bg-[#e9f2e7] p-7"><div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-[#0f766e] shadow-sm"><MapPin size={21} /></div><h2 className="mt-5 font-serif text-[27px] font-semibold tracking-[-0.03em] text-[#234b46]">Start with a place.</h2><p className="mt-3 max-w-md text-sm leading-6 text-[#638078]">Search by city or ZIP code, or let your browser share your approximate location. We’ll show the closest public listings we can find.</p></div><div className="rounded-[26px] border border-[#d8e4dc] bg-white p-7"><div className="flex items-center gap-2 text-[#0f766e]"><Phone size={18} /><span className="text-[11px] font-bold uppercase tracking-[0.14em]">About phone numbers</span></div><h2 className="mt-4 font-serif text-[23px] font-semibold text-[#234b46]">Call before you go.</h2><p className="mt-2 text-sm leading-6 text-[#78918b]">Phone numbers come from public OpenStreetMap listings and may be missing or out of date. Always confirm hours, services, and insurance with the office.</p></div></div>}
+            {careCoordinates && !careLoading && <div className="mt-6 grid gap-5 lg:grid-cols-[1fr_380px]"><div className="overflow-hidden rounded-[26px] border border-[#d8e4dc] bg-white shadow-[0_10px_30px_rgba(40,75,67,0.04)]"><div className="flex items-center justify-between gap-3 border-b border-[#e8f0e9] px-5 py-4"><div><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#0f766e]">Map area</p><p className="mt-1 text-sm font-semibold text-[#315951]">{careCoordinates.label}</p></div><a href={"https://www.openstreetmap.org/?mlat=" + careCoordinates.latitude + "&mlon=" + careCoordinates.longitude + "#map=14/" + careCoordinates.latitude + "/" + careCoordinates.longitude} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs font-bold text-[#0f766e] hover:underline">Open full map <ExternalLink size={13} /></a></div><div className="h-[460px] bg-[#e9f2e7]"><iframe title="Map of nearby doctor offices" src={careMapUrl} className="h-full w-full border-0" loading="lazy" /></div></div><div className="rounded-[26px] border border-[#d8e4dc] bg-white p-4 shadow-[0_10px_30px_rgba(40,75,67,0.04)]"><div className="mb-3 flex items-center justify-between px-2"><div><h2 className="font-serif text-[23px] font-semibold text-[#234b46]">Closest listings</h2><p className="mt-1 text-xs text-[#8aa098]">Up to 8 public map listings</p></div><span className="rounded-full bg-[#eff7f0] px-2.5 py-1 text-[10px] font-bold text-[#0f766e]">{carePlaces.length}</span></div>{carePlaces.length ? <div className="space-y-2">{carePlaces.slice(0, 8).map((place) => <div key={place.id} className="rounded-2xl border border-[#e5eee7] bg-[#fbfcf9] p-3"><div className="flex items-start justify-between gap-3"><div><h3 className="font-serif text-[17px] font-semibold leading-5 text-[#315951]">{place.name}</h3><p className="mt-1 text-xs leading-5 text-[#78918b]">{place.address}</p></div><span className="shrink-0 rounded-full bg-[#e7f2e8] px-2 py-1 text-[10px] font-bold text-[#0f766e]">{place.distanceKm.toFixed(1)} km</span></div><div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">{place.phone ? <a href={"tel:" + formatPhoneHref(place.phone)} className="flex items-center gap-1 font-semibold text-[#0f766e] hover:underline"><Phone size={13} /> {place.phone}</a> : <span className="flex items-center gap-1 text-[#9aaea7]"><Phone size={13} /> Phone not listed</span>}<a href={"https://www.openstreetmap.org/?mlat=" + place.latitude + "&mlon=" + place.longitude + "#map=18/" + place.latitude + "/" + place.longitude} target="_blank" rel="noreferrer" className="flex items-center gap-1 font-semibold text-[#64827a] hover:text-[#0f766e]">Directions <ExternalLink size={12} /></a></div></div>)}</div> : <div className="rounded-2xl bg-[#fbfcf9] p-6 text-center"><MapPin size={23} className="mx-auto text-[#8aada0]" /><p className="mt-3 text-sm font-semibold text-[#55756d]">No offices were listed nearby.</p><p className="mt-1 text-xs leading-5 text-[#819a91]">Try a nearby city or a broader search area.</p></div>}</div></div>}
           </section>
         )}
       </main>
