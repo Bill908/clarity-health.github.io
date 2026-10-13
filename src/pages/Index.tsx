@@ -52,6 +52,16 @@ const sourceLinks = [
   { name: "CDC", detail: "Public health recommendations", href: "https://www.cdc.gov/" },
 ];
 
+const dailySources = [
+  { name: "NIH News in Health", title: "How sleep supports your whole body", detail: "Research in plain language", href: "https://newsinhealth.nih.gov/2021/04/good-nights-sleep" },
+  { name: "FDA Consumer Updates", title: "Making sense of medicine labels", detail: "Practical medication literacy", href: "https://www.fda.gov/consumers/consumer-updates" },
+  { name: "CDC Health Topics", title: "Everyday prevention, explained", detail: "Public health guidance", href: "https://www.cdc.gov/health-topics.html" },
+  { name: "NHS Conditions", title: "Understanding symptoms and care", detail: "Patient-friendly overviews", href: "https://www.nhs.uk/conditions/" },
+  { name: "WHO Health Topics", title: "Health information with a global view", detail: "Evidence and context", href: "https://www.who.int/health-topics" },
+  { name: "NIMH", title: "Caring for your mental health", detail: "Mental health education", href: "https://www.nimh.nih.gov/health" },
+  { name: "AHRQ", title: "Questions are the answer", detail: "Better conversations with clinicians", href: "https://www.ahrq.gov/questions/index.html" },
+];
+
 type QuestionKind = "sleep" | "headache" | "cough" | "fever" | "digestive" | "stress" | "skin" | "medication" | "general";
 type FollowUp = { question: string; answer: string };
 type CommunityReply = { id: string; question_id: string; display_name: string; body: string; created_at: string };
@@ -218,6 +228,8 @@ function Index() {
   }, [answerVisible]);
 
   const currentQuestionSaved = savedQuestions.includes(question.trim());
+  const dailySource = dailySources[Math.floor(Date.now() / 86400000) % dailySources.length];
+  const dailySourceDate = new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric" }).format(new Date());
   const questionKind = useMemo((): QuestionKind => {
     const normalized = question.toLowerCase();
     if (normalized.includes("sleep") || normalized.includes("insomnia")) return "sleep";
@@ -541,7 +553,7 @@ function Index() {
                 <div className="mb-5 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-[#0f766e]"><span className="h-2 w-2 rounded-full bg-[#f28b72]" /> Health answers, made human</div>
                 <h1 className="max-w-[590px] font-serif text-[49px] font-semibold leading-[0.98] tracking-[-0.055em] text-[#173e3a] sm:text-[65px]">A clearer answer<br /><em className="font-normal text-[#0f766e]">starts here.</em></h1>
                 <p className="mt-6 max-w-[510px] text-[17px] leading-8 text-[#64807a]">Thoughtful, research-backed guidance for the health questions on your mind. No jargon. No judgment. Just a useful place to begin.</p>
-                <div className="mt-7 flex flex-wrap gap-2.5"><TrustPill icon={<ShieldCheck size={15} />}>Sources you can trust</TrustPill><TrustPill icon={<Stethoscope size={15} />}>Always clinician-aware</TrustPill></div>
+                <div className="mt-7 flex flex-wrap gap-2.5"><TrustPill icon={<ShieldCheck size={15} />}>Sources you can trust</TrustPill><TrustPill icon={<Stethoscope size={15} />}>Always clinician-aware</TrustPill></div><a href={dailySource.href} target="_blank" rel="noreferrer" className="mt-4 flex max-w-[470px] items-center gap-3 rounded-2xl border border-[#dce7df] bg-white/80 p-3.5 text-left shadow-[0_5px_18px_rgba(40,75,67,0.04)] transition hover:-translate-y-0.5 hover:border-[#a9cbbb] hover:bg-white"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#fff0e9] text-[#d66e54]"><BookOpen size={17} /></span><span className="min-w-0 flex-1"><span className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-[#d66e54]">Today’s trusted read <span className="text-[#a8bbb2]">· {dailySourceDate}</span></span><span className="mt-1 block truncate text-sm font-semibold text-[#315951]">{dailySource.title}</span><span className="mt-0.5 block text-[11px] text-[#7e9890]">{dailySource.name} · {dailySource.detail}</span></span><ExternalLink size={14} className="shrink-0 text-[#8ba69e]" /></a>
               </div>
               <div className="relative min-h-[320px] animate-[fadeUp_0.7s_ease-out] sm:min-h-[380px]">
                 <div className="absolute inset-x-0 bottom-0 top-5 overflow-hidden rounded-[30px] bg-[#dbe9df] shadow-[0_20px_50px_rgba(50,83,73,0.12)]"><img src="https://images.unsplash.com/photo-1551076805-e1869033e561?auto=format&fit=crop&w=1100&q=85" alt="Person reading health information in a bright, calm space" className="h-full w-full object-cover object-center mix-blend-multiply opacity-80" /><div className="absolute inset-0 bg-[#d6e5d9]/25" /></div>
