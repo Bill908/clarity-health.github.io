@@ -14,8 +14,12 @@ import {
   Info,
   Menu,
   MessageCircle,
+  MessageSquareText,
   PenLine,
+  Plus,
+  RefreshCw,
   Search,
+  Send,
   ShieldCheck,
   Sparkles,
   Stethoscope,
@@ -26,6 +30,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import { supabase } from "@/integrations/supabase/client";
 
 const quickQuestions = [
   "How can I get better sleep?",
@@ -46,6 +51,8 @@ const sourceLinks = [
 
 type QuestionKind = "sleep" | "headache" | "cough" | "fever" | "digestive" | "stress" | "skin" | "medication" | "general";
 type FollowUp = { question: string; answer: string };
+type CommunityReply = { id: string; question_id: string; display_name: string; body: string; created_at: string };
+type CommunityQuestion = { id: string; display_name: string; title: string; body: string; topic: string; created_at: string; replies: CommunityReply[] };
 
 const followUpGuidance: Record<QuestionKind, FollowUp[]> = {
   sleep: [
@@ -86,6 +93,10 @@ const followUpGuidance: Record<QuestionKind, FollowUp[]> = {
   ],
 };
 
+function formatCommunityDate(value: string) {
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date(value));
+}
+
 function LogoMark() {
   return (
     <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-[#0f766e] text-white shadow-[0_8px_20px_rgba(15,118,110,0.18)]">
@@ -108,12 +119,70 @@ function TrustPill({ icon, children }: { icon: React.ReactNode; children: React.
 
 function Index() {
   const [question, setQuestion] = useState("");
-  const [activeView, setActiveView] = useState<"ask" | "saved">("ask");
+  const [activeView, setActiveView] = useState<"ask" | "saved" | "community">("ask");
   const [answerVisible, setAnswerVisible] = useState(false);
   const [savedQuestions, setSavedQuestions] = useState<string[]>(initialSaved);
   const [selectedFollowUp, setSelectedFollowUp] = useState<FollowUp | null>(null);
+  const [buildOnOpen, setBuildOnOpen] = useState(false);
+  const [buildOnDraft, setBuildOnDraft] = useState("");
+  const [communityQuestions, setCommunityQuestions] = useState<CommunityQuestion[]>([]);
+  const [selectedCommunityId, setSelectedCommunityId] = useState<string | null>(null);
+  const [communityLoading, setCommunityLoading] = useState(false);
+  const [communityError, setCommunityError] = useState("");
+  const [communityFormOpen, setCommunityFormOpen] = useState(false);
+  const [communityName, setCommunityName] = useState("Anonymous");
+  const [communityTitle, setCommunityTitle] = useState("");
+  const [communityBody, setCommunityBody] = useState("");
+  const [communityTopic, setCommunityTopic] = useState("General");
+  const [replyName, setReplyName] = useState("Anonymous");
+  const [replyBody, setReplyBody] = useState("");
+  const [communitySubmitting, setCommunitySubmitting] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const answerRef = useRef<HTMLDivElement>(null);
+  const buildOnRef = useRef<HTMLTextAreaElement>(null);
+
+  const loadCommunity = async () => {
+    setCommunityLoading(true);
+    setCommunityError("");
+    const { data: questionData, error: questionError } = await supabase
+      .from("community_questions")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(30);
+
+    if (questionError) {
+      setCommunityError("The community is taking a moment to load. Please try again.");
+      setCommunityLoading(false);
+      return;
+    }
+
+    const questionRows = (questionData ?? []) as Array<Omit<CommunityQuestion, "replies">>;
+    const questionIds = questionRows.map((item) => item.id);
+    let replyRows: CommunityReply[] = [];
+
+    if (questionIds.length) {
+      const { data: replyData, error: replyError } = await supabase
+        .from("community_replies")
+        .select("*")
+        .in("question_id", questionIds)
+        .order("created_at", { ascending: true });
+      if (replyError) {
+        setCommunityError("Questions loaded, but replies could not be loaded right now.");
+      } else {
+        replyRows = (replyData ?? []) as CommunityReply[];
+      }
+    }
+
+    setCommunityQuestions(questionRows.map((item) => ({
+      ...item,
+      replies: replyRows.filter((reply) => reply.question_id === item.id),
+    })));
+    setCommunityLoading(false);
+  };
+
+  useEffect(() => {
+    void loadCommunity();
+  }, []);
 
   useEffect(() => {
     const storedQuestions = window.localStorage.getItem("clarity-health-saved");
@@ -154,6 +223,8 @@ function Index() {
     event.preventDefault();
     if (!question.trim()) return;
     setSelectedFollowUp(null);
+    setBuildOnOpen(false);
+    setBuildOnDraft("");
     setActiveView("ask");
     setAnswerVisible(true);
   };
@@ -161,6 +232,8 @@ function Index() {
   const chooseQuestion = (prompt: string) => {
     setQuestion(prompt);
     setSelectedFollowUp(null);
+    setBuildOnOpen(false);
+    setBuildOnDraft("");
     setAnswerVisible(false);
     setActiveView("ask");
   };
@@ -168,8 +241,64 @@ function Index() {
   const clearQuestion = () => {
     setQuestion("");
     setSelectedFollowUp(null);
+    setBuildOnOpen(false);
+    setBuildOnDraft("");
     setAnswerVisible(false);
   };
+
+  const buildOnQuestion = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!question.trim() || !buildOnDraft.trim()) return;
+    setQuestion(`${question.trim()} Follow-up: ${buildOnDraft.trim()}`);
+    setBuildOnDraft("");
+    setBuildOnOpen(false);
+    setSelectedFollowUp(null);
+    setAnswerVisible(true);
+  };
+
+  const submitCommunityQuestion = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!communityTitle.trim() || !communityBody.trim()) return;
+    setCommunitySubmitting(true);
+    setCommunityError("");
+    const { data, error } = await supabase.from("community_questions").insert({
+      display_name: communityName.trim() || "Anonymous",
+      title: communityTitle.trim(),
+      body: communityBody.trim(),
+      topic: communityTopic,
+    }).select("id").single();
+    if (error) {
+      setCommunityError("We couldn’t post that question. Please check the length and try again.");
+    } else {
+      setCommunityTitle("");
+      setCommunityBody("");
+      setCommunityFormOpen(false);
+      await loadCommunity();
+      if (data?.id) setSelectedCommunityId(data.id);
+    }
+    setCommunitySubmitting(false);
+  };
+
+  const submitCommunityReply = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedCommunityId || !replyBody.trim()) return;
+    setCommunitySubmitting(true);
+    setCommunityError("");
+    const { error } = await supabase.from("community_replies").insert({
+      question_id: selectedCommunityId,
+      display_name: replyName.trim() || "Anonymous",
+      body: replyBody.trim(),
+    });
+    if (error) {
+      setCommunityError("We couldn’t post that reply. Please check the length and try again.");
+    } else {
+      setReplyBody("");
+      await loadCommunity();
+    }
+    setCommunitySubmitting(false);
+  };
+
+  const selectedCommunityQuestion = communityQuestions.find((item) => item.id === selectedCommunityId) ?? null;
 
   const answerCopy = {
     sleep: {
@@ -284,6 +413,7 @@ function Index() {
           <nav className="hidden items-center gap-8 md:flex" aria-label="Main navigation">
             <button onClick={() => { setActiveView("ask"); setAnswerVisible(false); }} className={`text-sm font-medium transition-colors ${activeView === "ask" ? "text-[#0f766e]" : "text-[#66807a] hover:text-[#173e3a]"}`}>Ask a question</button>
             <button onClick={() => setActiveView("saved")} className={`flex items-center gap-2 text-sm font-medium transition-colors ${activeView === "saved" ? "text-[#0f766e]" : "text-[#66807a] hover:text-[#173e3a]"}`}><Bookmark size={15} /> Your library</button>
+            <button onClick={() => setActiveView("community")} className={`flex items-center gap-2 text-sm font-medium transition-colors ${activeView === "community" ? "text-[#0f766e]" : "text-[#66807a] hover:text-[#173e3a]"}`}><MessageSquareText size={15} /> Community</button>
             <button onClick={() => setMenuOpen(!menuOpen)} className="relative flex items-center gap-2 rounded-full border border-[#dce7df] bg-white/80 px-3.5 py-2 text-sm font-semibold text-[#35615a] transition hover:border-[#9cc2b7] hover:bg-white">
               <UserRound size={16} /> Sign in
               {menuOpen && <span className="absolute right-0 top-12 w-56 rounded-2xl border border-[#dce7df] bg-white p-4 text-left text-xs font-normal text-[#58716c] shadow-[0_16px_40px_rgba(40,75,67,0.13)]"><strong className="mb-1 block text-sm text-[#183d3a]">Keep your answers close</strong>Create an optional account to sync your saved health notes across devices.<span className="mt-3 block font-semibold text-[#0f766e]">Coming soon</span></span>}
@@ -291,7 +421,7 @@ function Index() {
           </nav>
           <button className="rounded-xl p-2 text-[#39635d] md:hidden" onClick={() => setMenuOpen(!menuOpen)} aria-label="Open menu"><Menu size={22} /></button>
         </div>
-        {menuOpen && <div className="border-t border-[#e3e8df] bg-white px-5 py-3 md:hidden"><div className="mx-auto flex max-w-[1180px] gap-5 text-sm font-medium text-[#4c6b65]"><button onClick={() => { setActiveView("ask"); setMenuOpen(false); }}>Ask a question</button><button onClick={() => { setActiveView("saved"); setMenuOpen(false); }}>Your library</button></div></div>}
+        {menuOpen && <div className="border-t border-[#e3e8df] bg-white px-5 py-3 md:hidden"><div className="mx-auto flex max-w-[1180px] flex-wrap gap-5 text-sm font-medium text-[#4c6b65]"><button onClick={() => { setActiveView("ask"); setMenuOpen(false); }}>Ask a question</button><button onClick={() => { setActiveView("saved"); setMenuOpen(false); }}>Your library</button><button onClick={() => { setActiveView("community"); setMenuOpen(false); }}>Community</button></div></div>}
       </header>
 
       <main className="mx-auto max-w-[1180px] px-5 pb-20 sm:px-8">
@@ -324,6 +454,7 @@ function Index() {
             {answerVisible ? (
               <section ref={answerRef} className="mt-8 scroll-mt-24 animate-[fadeUp_0.45s_ease-out]" aria-labelledby="answer-title">
                 <div className="mb-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.16em] text-[#0f766e]"><span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#dceddf]"><Check size={13} strokeWidth={3} /></span> Your Clarity answer</div><button type="button" onClick={saveQuestion} className="flex items-center gap-2 self-start rounded-full px-3 py-1.5 text-xs font-semibold text-[#53746d] transition hover:bg-white hover:text-[#0f766e] sm:self-auto">{currentQuestionSaved ? <BookmarkCheck size={15} className="text-[#0f766e]" /> : <Bookmark size={15} />} {currentQuestionSaved ? "Saved to your library" : "Save for later"}</button></div>
+<div className="mb-5 rounded-[23px] border border-[#d8e4dc] bg-white p-4 shadow-[0_8px_25px_rgba(40,75,67,0.04)] sm:p-5"><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><div className="flex items-start gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#e7f2e8] text-[#0f766e]"><PenLine size={17} /></span><div><h3 className="text-sm font-bold text-[#214b45]">Build on this question</h3><p className="mt-1 text-xs leading-5 text-[#78918b]">Keep the context and ask for the next layer of detail.</p></div></div><button type="button" onClick={() => setBuildOnOpen(!buildOnOpen)} className="flex items-center gap-2 self-start rounded-full border border-[#cfe2d5] px-3.5 py-2 text-xs font-bold text-[#0f766e] transition hover:bg-[#eff7f0] sm:self-auto">{buildOnOpen ? <X size={14} /> : <Plus size={14} />} {buildOnOpen ? "Close" : "Continue this question"}</button></div>{buildOnOpen && <form onSubmit={buildOnQuestion} className="mt-4 border-t border-[#e8f0e9] pt-4"><Textarea ref={buildOnRef} value={buildOnDraft} onChange={(event) => setBuildOnDraft(event.target.value)} required maxLength={500} placeholder="e.g. What should I watch for over the next few days?" className="min-h-[88px] rounded-xl border-[#d8e4dc] bg-[#fbfcf9] text-sm leading-6 focus-visible:ring-[#0f766e]" aria-label="Build on your question" /><div className="mt-3 flex justify-end"><Button type="submit" disabled={!buildOnDraft.trim()} className="h-10 rounded-full bg-[#0f766e] px-4 text-xs font-semibold text-white hover:bg-[#0a655f] disabled:bg-[#b8cac3]">Ask this follow-up <ArrowUpRight size={14} className="ml-1" /></Button></div></form>}</div>
                 <div className="grid gap-5 lg:grid-cols-[1fr_290px]">
                   <article className="overflow-hidden rounded-[26px] border border-[#d8e4dc] bg-white shadow-[0_14px_40px_rgba(40,75,67,0.06)]"><div className="border-b border-[#e6eee7] bg-[#eff7f0] p-6 sm:p-8"><div className="mb-4 flex flex-wrap items-center gap-2"><Badge className="rounded-full border-0 bg-[#d7ecdf] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.13em] text-[#0f766e]">A place to start</Badge><span className="text-xs text-[#759089]">Curated guidance · 5 min read</span></div><p className="mb-2 text-sm font-medium italic text-[#76908a]">“{question.trim()}”</p><h2 id="answer-title" className="max-w-[650px] font-serif text-[32px] font-semibold leading-tight tracking-[-0.035em] text-[#183d3a]">{answerCopy.title}</h2><p className="mt-4 max-w-[700px] text-[16px] leading-7 text-[#4f7068]">{answerCopy.summary}</p></div><div className="p-6 sm:p-8"><h3 className="mb-4 flex items-center gap-2 text-[15px] font-bold text-[#183d3a]"><FileText size={17} className="text-[#0f766e]" /> Helpful things to know</h3><ul className="space-y-4">{answerCopy.points.map((point) => <li key={point} className="flex gap-3 text-[15px] leading-7 text-[#52726b]"><span className="mt-1.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#e8f3e9] text-[#0f766e]"><Check size={12} strokeWidth={3} /></span>{point}</li>)}</ul><div className="mt-7 rounded-2xl border border-[#f3d7c9] bg-[#fff6f0] p-4"><div className="flex gap-3"><TriangleAlert size={18} className="mt-0.5 shrink-0 text-[#d66e54]" /><div><h4 className="text-sm font-bold text-[#8d4939]">When to get more help</h4><p className="mt-1 text-sm leading-6 text-[#885e55]">{answerCopy.next}</p></div></div></div></div></article>
                   <aside className="space-y-5"><div className="rounded-[23px] border border-[#d8e4dc] bg-white p-5"><div className="mb-4 flex items-center gap-2"><span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#e7f2e8] text-[#0f766e]"><Stethoscope size={16} /></span><h3 className="text-sm font-bold text-[#214b45]">Questions for a clinician</h3></div><p className="text-sm leading-6 text-[#68837c]">“What else could cause this pattern?”</p><p className="mt-3 text-sm leading-6 text-[#68837c]">“What changes should make me follow up?”</p><p className="mt-3 border-t border-[#e8f0e9] pt-3 text-xs leading-5 text-[#7a948c]"><span className="font-semibold text-[#4f7169]">A useful detail:</span> {answerCopy.consider}</p><button type="button" className="mt-4 flex items-center gap-1 text-xs font-bold text-[#0f766e] hover:underline">See conversation guide <ChevronRight size={14} /></button></div><div className="rounded-[23px] border border-[#d8e4dc] bg-[#fbfcf9] p-5"><div className="mb-4 flex items-center justify-between"><div className="flex items-center gap-2"><BookOpen size={17} className="text-[#0f766e]" /><h3 className="text-sm font-bold text-[#214b45]">Sources</h3></div><span className="text-[10px] font-bold uppercase tracking-wider text-[#91a69f]">3 reviewed</span></div><div className="space-y-3">{sourceLinks.map((source) => <a href={source.href} target="_blank" rel="noreferrer" key={source.name} className="group flex items-start justify-between gap-2"><span><span className="block text-xs font-semibold text-[#446a62] group-hover:text-[#0f766e]">{source.name}</span><span className="block text-[11px] text-[#91a69f]">{source.detail}</span></span><ExternalLink size={13} className="mt-0.5 shrink-0 text-[#8ba69e]" /></a>)}</div></div></aside>
@@ -338,8 +469,19 @@ function Index() {
               </section>
             )}
           </>
-        ) : (
+        ) : activeView === "saved" ? (
           <section className="pb-10 pt-12 md:pt-16"><div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><div className="mb-3 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-[#0f766e]"><History size={15} /> Your private library</div><h1 className="font-serif text-[44px] font-semibold tracking-[-0.05em] text-[#173e3a]">Saved for later<span className="text-[#e2755e]">.</span></h1><p className="mt-3 text-[16px] text-[#718b84]">A quiet place for the questions you want to revisit.</p></div><button onClick={() => { setActiveView("ask"); setAnswerVisible(false); }} className="flex items-center gap-2 self-start rounded-full bg-[#0f766e] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0a655f]"><PenLine size={15} /> Ask something new</button></div>{savedQuestions.length ? <div className="grid gap-4 md:grid-cols-2">{savedQuestions.map((savedQuestion, index) => <div key={savedQuestion} className="group rounded-[23px] border border-[#d8e4dc] bg-white p-5 shadow-[0_8px_25px_rgba(40,75,67,0.04)] transition hover:-translate-y-0.5 hover:shadow-[0_12px_30px_rgba(40,75,67,0.08)]"><div className="mb-6 flex items-center justify-between"><span className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-[#8aa29a]"><Clock3 size={14} /> Saved question 0{index + 1}</span><button onClick={() => { setQuestion(savedQuestion); setSavedQuestions(savedQuestions.filter((item) => item !== savedQuestion)); }} className="rounded-full p-1.5 text-[#9bb0aa] opacity-0 transition hover:bg-[#fff2ed] hover:text-[#d66e54] group-hover:opacity-100" aria-label={`Remove ${savedQuestion}`}><X size={15} /></button></div><p className="font-serif text-[22px] font-semibold leading-snug text-[#234b46]">{savedQuestion}</p><button onClick={() => { setQuestion(savedQuestion); setActiveView("ask"); setAnswerVisible(true); }} className="mt-5 flex items-center gap-1 text-xs font-bold text-[#0f766e]">Open answer <ArrowUpRight size={14} /></button></div>)}</div> : <div className="rounded-[26px] border border-dashed border-[#c9dcd0] bg-white/50 p-12 text-center"><Bookmark size={26} className="mx-auto text-[#8aada0]" /><p className="mt-4 font-serif text-2xl font-semibold text-[#315951]">Your library is waiting.</p><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[#819a91]">Save an answer while you explore and it will show up here in this browser.</p></div>}<div className="mt-8 flex items-start gap-2 text-xs leading-5 text-[#8ba09a]"><ShieldCheck size={14} className="mt-0.5 shrink-0 text-[#0f766e]" />Your saved questions stay in this browser. Create an account later if you’d like to sync them across devices.</div></section>
+        ) : (
+          <section className="pb-10 pt-12 md:pt-16">
+            <div className="mb-8 flex flex-col justify-between gap-5 sm:flex-row sm:items-end"><div><div className="mb-3 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-[#0f766e]"><MessageSquareText size={15} /> The Clarity Commons</div><h1 className="font-serif text-[44px] font-semibold tracking-[-0.05em] text-[#173e3a]">Ask together<span className="text-[#e2755e]">.</span></h1><p className="mt-3 max-w-xl text-[16px] leading-7 text-[#718b84]">A thoughtful space for real-life health questions, lived experience, and kind replies. Share carefully and protect your privacy.</p></div><div className="flex items-center gap-2"><button type="button" onClick={() => void loadCommunity()} className="flex h-10 items-center gap-2 rounded-full border border-[#d8e4dc] bg-white px-4 text-xs font-semibold text-[#5d7b73] transition hover:border-[#94bdb1] hover:text-[#0f766e]" aria-label="Refresh community"><RefreshCw size={14} /> Refresh</button><button type="button" onClick={() => setCommunityFormOpen(!communityFormOpen)} className="flex h-10 items-center gap-2 rounded-full bg-[#0f766e] px-4 text-xs font-semibold text-white shadow-sm transition hover:bg-[#0a655f]"><Plus size={15} /> Ask the community</button></div></div>
+            {communityError && <div className="mb-5 flex items-center justify-between gap-3 rounded-2xl border border-[#f3d7c9] bg-[#fff6f0] px-4 py-3 text-sm text-[#885e55]"><span>{communityError}</span><button type="button" onClick={() => void loadCommunity()} className="shrink-0 font-semibold text-[#b45b47] hover:underline">Try again</button></div>}
+            {communityFormOpen && <form onSubmit={submitCommunityQuestion} className="mb-5 rounded-[26px] border border-[#cfe2d5] bg-white p-5 shadow-[0_12px_30px_rgba(40,75,67,0.06)] sm:p-6"><div className="mb-5 flex items-start justify-between gap-4"><div><h2 className="font-serif text-[25px] font-semibold text-[#234b46]">Start a thoughtful thread</h2><p className="mt-1 text-xs leading-5 text-[#78918b]">Do not include names, phone numbers, or other private medical details.</p></div><button type="button" onClick={() => setCommunityFormOpen(false)} className="rounded-full p-1.5 text-[#90a9a0] hover:bg-[#f2f7f2] hover:text-[#0f766e]" aria-label="Close question form"><X size={17} /></button></div><div className="grid gap-4 sm:grid-cols-[1fr_180px]"><label className="text-xs font-semibold text-[#53736b]">Question title<input value={communityTitle} onChange={(event) => setCommunityTitle(event.target.value)} minLength={5} maxLength={180} required placeholder="What would you like to understand?" className="mt-2 h-11 w-full rounded-xl border border-[#d8e4dc] bg-[#fbfcf9] px-3 text-sm font-normal text-[#234b46] outline-none ring-[#0f766e] placeholder:text-[#a7b9b2] focus:ring-2" /></label><label className="text-xs font-semibold text-[#53736b]">Topic<select value={communityTopic} onChange={(event) => setCommunityTopic(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-[#d8e4dc] bg-[#fbfcf9] px-3 text-sm font-normal text-[#234b46] outline-none focus:ring-2 focus:ring-[#0f766e]"><option>General</option><option>Sleep</option><option>Headaches</option><option>Medication</option><option>Mental wellbeing</option></select></label></div><label className="mt-4 block text-xs font-semibold text-[#53736b]">Give a little context<Textarea value={communityBody} onChange={(event) => setCommunityBody(event.target.value)} minLength={20} maxLength={5000} required placeholder="What have you noticed, and what kind of perspective would help?" className="mt-2 min-h-[115px] rounded-xl border-[#d8e4dc] bg-[#fbfcf9] text-sm leading-6 focus-visible:ring-[#0f766e]" /></label><div className="mt-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><label className="text-xs font-semibold text-[#53736b]">Display name<input value={communityName} onChange={(event) => setCommunityName(event.target.value)} maxLength={60} className="ml-2 h-9 w-36 rounded-lg border border-[#d8e4dc] bg-[#fbfcf9] px-2 text-xs font-normal text-[#234b46] outline-none focus:ring-2 focus:ring-[#0f766e]" /></label><button type="submit" disabled={communitySubmitting} className="flex h-10 items-center justify-center gap-2 rounded-full bg-[#0f766e] px-4 text-xs font-semibold text-white hover:bg-[#0a655f] disabled:cursor-wait disabled:opacity-60">{communitySubmitting ? "Posting…" : "Post question"} <Send size={14} /></button></div></form>}
+            <div className="grid gap-5 lg:grid-cols-[350px_1fr]">
+              <aside className="rounded-[26px] border border-[#d8e4dc] bg-white p-4 shadow-[0_10px_30px_rgba(40,75,67,0.04)]"><div className="mb-3 flex items-center justify-between px-2"><div><h2 className="font-serif text-[22px] font-semibold text-[#234b46]">Recent questions</h2><p className="mt-1 text-xs text-[#8aa098]">Open conversations from the community</p></div><span className="rounded-full bg-[#eff7f0] px-2.5 py-1 text-[10px] font-bold text-[#0f766e]">{communityQuestions.length}</span></div>{communityLoading ? <div className="space-y-2 p-2"><div className="h-20 animate-pulse rounded-2xl bg-[#f1f6f1]" /><div className="h-20 animate-pulse rounded-2xl bg-[#f1f6f1]" /><div className="h-20 animate-pulse rounded-2xl bg-[#f1f6f1]" /></div> : communityQuestions.length ? <div className="space-y-2">{communityQuestions.map((item) => <button type="button" key={item.id} onClick={() => setSelectedCommunityId(item.id)} className={selectedCommunityId === item.id ? "w-full rounded-2xl border border-[#b9d8c6] bg-[#edf7ef] p-3 text-left" : "w-full rounded-2xl border border-transparent p-3 text-left transition hover:border-[#d8e4dc] hover:bg-[#fbfcf9]"}><div className="mb-2 flex items-center justify-between gap-2"><span className="rounded-full bg-white px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-[#0f766e]">{item.topic}</span><span className="text-[10px] text-[#9aada6]">{formatCommunityDate(item.created_at)}</span></div><p className="line-clamp-2 font-serif text-[17px] font-semibold leading-6 text-[#315951]">{item.title}</p><p className="mt-1 text-xs text-[#78918b]">{item.replies.length} {item.replies.length === 1 ? "reply" : "replies"}</p></button>)}</div> : <div className="rounded-2xl bg-[#fbfcf9] p-6 text-center"><MessageSquareText size={24} className="mx-auto text-[#8aada0]" /><p className="mt-3 font-serif text-lg font-semibold text-[#315951]">Be the first to ask.</p><p className="mt-1 text-xs leading-5 text-[#819a91]">Start a thread and invite a thoughtful reply.</p></div>}</aside>
+              {selectedCommunityQuestion ? <article className="rounded-[26px] border border-[#d8e4dc] bg-white p-5 shadow-[0_10px_30px_rgba(40,75,67,0.04)] sm:p-7"><div className="flex items-center justify-between gap-3"><span className="rounded-full bg-[#eff7f0] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.13em] text-[#0f766e]">{selectedCommunityQuestion.topic}</span><span className="text-xs text-[#93a8a0]">{formatCommunityDate(selectedCommunityQuestion.created_at)}</span></div><h2 className="mt-5 font-serif text-[31px] font-semibold leading-tight tracking-[-0.03em] text-[#234b46]">{selectedCommunityQuestion.title}</h2><p className="mt-4 text-[15px] leading-7 text-[#5b786f]">{selectedCommunityQuestion.body}</p><div className="mt-5 flex items-center gap-2 text-xs font-semibold text-[#78918b]"><span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#dceddf] text-[#0f766e]"><UserRound size={14} /></span>{selectedCommunityQuestion.display_name}</div><div className="my-7 h-px bg-[#e9efe9]" /><div className="flex items-center gap-2"><MessageCircle size={17} className="text-[#0f766e]" /><h3 className="font-serif text-[22px] font-semibold text-[#234b46]">Thoughtful replies <span className="font-sans text-sm font-medium text-[#8da39b]">{selectedCommunityQuestion.replies.length}</span></h3></div><div className="mt-5 space-y-4">{selectedCommunityQuestion.replies.length ? selectedCommunityQuestion.replies.map((reply) => <div key={reply.id} className="rounded-2xl bg-[#f5f8f4] p-4"><div className="flex items-center justify-between gap-2"><span className="text-xs font-bold text-[#4c6e65]">{reply.display_name}</span><span className="text-[10px] text-[#9aada6]">{formatCommunityDate(reply.created_at)}</span></div><p className="mt-2 text-sm leading-6 text-[#5b786f]">{reply.body}</p></div>) : <p className="rounded-2xl border border-dashed border-[#cfe0d4] p-5 text-center text-sm text-[#819a91]">No replies yet. Add the first thoughtful perspective.</p>}</div><form onSubmit={submitCommunityReply} className="mt-6 rounded-2xl border border-[#dce9df] bg-[#fbfcf9] p-4"><label className="text-xs font-semibold text-[#53736b]">Join the conversation<Textarea value={replyBody} onChange={(event) => setReplyBody(event.target.value)} minLength={5} maxLength={2500} required placeholder="Share an experience, a helpful question, or a gentle suggestion…" className="mt-2 min-h-[100px] rounded-xl border-[#d8e4dc] bg-white text-sm leading-6 focus-visible:ring-[#0f766e]" /></label><div className="mt-3 flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><label className="text-xs font-semibold text-[#53736b]">Display name<input value={replyName} onChange={(event) => setReplyName(event.target.value)} maxLength={60} className="ml-2 h-9 w-36 rounded-lg border border-[#d8e4dc] bg-white px-2 text-xs font-normal text-[#234b46] outline-none focus:ring-2 focus:ring-[#0f766e]" /></label><button type="submit" disabled={communitySubmitting} className="flex h-10 items-center justify-center gap-2 rounded-full bg-[#0f766e] px-4 text-xs font-semibold text-white hover:bg-[#0a655f] disabled:cursor-wait disabled:opacity-60">{communitySubmitting ? "Posting…" : "Reply"} <Send size={14} /></button></div></form></article> : <div className="flex min-h-[440px] items-center justify-center rounded-[26px] border border-dashed border-[#c9dcd0] bg-white/60 p-10 text-center"><div><MessageSquareText size={30} className="mx-auto text-[#8aada0]" /><h2 className="mt-4 font-serif text-2xl font-semibold text-[#315951]">Choose a question to join in.</h2><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[#819a91]">Read the full context, then add a reply that helps someone feel more informed and less alone.</p></div></div>}
+            </div>
+            <p className="mt-6 flex items-start gap-2 text-xs leading-5 text-[#8ba09a]"><ShieldCheck size={14} className="mt-0.5 shrink-0 text-[#0f766e]" />Community replies are personal perspectives, not medical advice. Do not share identifying or private health information.</p>
+          </section>
         )}
       </main>
 
