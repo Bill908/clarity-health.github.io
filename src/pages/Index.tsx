@@ -153,6 +153,7 @@ function Index() {
   const [selectedFollowUp, setSelectedFollowUp] = useState<FollowUp | null>(null);
   const [guideOpen, setGuideOpen] = useState(false);
   const [dailyBriefingOpen, setDailyBriefingOpen] = useState(false);
+  const [focusAskSection, setFocusAskSection] = useState(false);
   const [buildOnOpen, setBuildOnOpen] = useState(false);
   const [buildOnDraft, setBuildOnDraft] = useState("");
   const [communityQuestions, setCommunityQuestions] = useState<CommunityQuestion[]>([]);
@@ -174,6 +175,7 @@ function Index() {
   const [careError, setCareError] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const answerRef = useRef<HTMLDivElement>(null);
+  const askSectionRef = useRef<HTMLElement>(null);
   const buildOnRef = useRef<HTMLTextAreaElement>(null);
 
   const loadCommunity = async () => {
@@ -228,6 +230,13 @@ function Index() {
     if (answerVisible) answerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [answerVisible]);
 
+  useEffect(() => {
+    if (focusAskSection && activeView === "ask") {
+      askSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      setFocusAskSection(false);
+    }
+  }, [activeView, focusAskSection]);
+
   const currentQuestionSaved = savedQuestions.includes(question.trim());
   const dailySource = dailySources[Math.floor(Date.now() / 86400000) % dailySources.length];
   const dailySourceDate = new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric" }).format(new Date());
@@ -269,6 +278,7 @@ function Index() {
 
   const chooseQuestion = (prompt: string) => {
     setQuestion(prompt);
+    setFocusAskSection(true);
     setSelectedFollowUp(null);
     setGuideOpen(false);
     setBuildOnOpen(false);
@@ -563,7 +573,7 @@ function Index() {
               </div>
             </section>
 
-            <section className="scroll-mt-24" aria-labelledby="ask-title">
+            <section ref={askSectionRef} className="scroll-mt-24" aria-labelledby="ask-title">
               <form onSubmit={askQuestion} className="relative overflow-hidden rounded-[28px] border border-[#d8e4dc] bg-white p-5 shadow-[0_14px_40px_rgba(40,75,67,0.07)] sm:p-7">
                 <div className="absolute right-0 top-0 h-24 w-24 rounded-bl-[70px] bg-[#edf5eb]" />
                 <div className="relative"><div className="mb-2 flex items-center gap-2 text-[#0f766e]"><PenLine size={17} /><span className="text-[11px] font-bold uppercase tracking-[0.16em]">Start with what you’re wondering</span></div><h2 id="ask-title" className="font-serif text-[27px] font-semibold tracking-[-0.025em] text-[#183d3a]">What’s on your mind today?</h2><p className="mt-1 text-sm text-[#78918b]">Ask about a symptom, a condition, or a health decision.</p>
