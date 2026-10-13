@@ -35,10 +35,14 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 
-const quickQuestions = [
-  "How can I get better sleep?",
-  "What does a tension headache feel like?",
-  "When should I see a doctor for a cough?",
+const dailyQuestionSets = [
+  ["How can I get better sleep?", "What helps with a tension headache?", "When should I see a doctor for a cough?"],
+  ["Why do I wake up tired?", "What can trigger a migraine?", "How long should a cold last?"],
+  ["How much water should I drink?", "What does healthy blood pressure mean?", "When is a fever concerning?"],
+  ["What can help with seasonal allergies?", "How can I reduce everyday stress?", "What should I know before taking a new medicine?"],
+  ["What causes occasional stomach pain?", "How can I build a steadier sleep routine?", "When should a rash be checked?"],
+  ["What are signs of dehydration?", "How can I prepare for a doctor visit?", "What helps a mild sore throat?"],
+  ["How can I support my mental health?", "What should I track about a recurring symptom?", "When should I call a pharmacist?"],
 ];
 
 const initialSaved = [
@@ -240,6 +244,7 @@ function Index() {
   const currentQuestionSaved = savedQuestions.includes(question.trim());
   const dailySource = dailySources[Math.floor(Date.now() / 86400000) % dailySources.length];
   const dailySourceDate = new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric" }).format(new Date());
+  const popularQuestions = dailyQuestionSets[Math.floor(Date.now() / 86400000) % dailyQuestionSets.length];
   const questionKind = useMemo((): QuestionKind => {
     const normalized = question.toLowerCase();
     if (normalized.includes("sleep") || normalized.includes("insomnia")) return "sleep";
@@ -578,7 +583,7 @@ function Index() {
                 <div className="absolute right-0 top-0 h-24 w-24 rounded-bl-[70px] bg-[#edf5eb]" />
                 <div className="relative"><div className="mb-2 flex items-center gap-2 text-[#0f766e]"><PenLine size={17} /><span className="text-[11px] font-bold uppercase tracking-[0.16em]">Start with what you’re wondering</span></div><h2 id="ask-title" className="font-serif text-[27px] font-semibold tracking-[-0.025em] text-[#183d3a]">What’s on your mind today?</h2><p className="mt-1 text-sm text-[#78918b]">Ask about a symptom, a condition, or a health decision.</p>
                   <div className="relative mt-5"><Textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="e.g. Why do I keep waking up tired?" className="min-h-[124px] resize-none rounded-[18px] border-[#d6e4dc] bg-[#fbfcf9] px-4 py-4 text-[16px] leading-7 text-[#224944] placeholder:text-[#a7b9b2] focus-visible:ring-[#0f766e]" aria-label="Your health question" /><span className="absolute bottom-3 right-3 text-[11px] text-[#a3b4ad]">{question.length}/500</span></div>
-                  <div className="mt-4 flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div className="flex flex-wrap gap-2">{quickQuestions.map((prompt) => <button type="button" key={prompt} onClick={() => chooseQuestion(prompt)} className="rounded-full border border-[#dce7df] bg-[#fbfcf9] px-3 py-1.5 text-xs font-medium text-[#5e7d75] transition hover:border-[#8cbcaf] hover:bg-[#eff7f0] hover:text-[#0f766e]">{prompt}</button>)}</div><Button type="submit" disabled={!question.trim()} className="h-11 shrink-0 rounded-full bg-[#0f766e] px-5 font-semibold text-white shadow-[0_8px_16px_rgba(15,118,110,0.16)] hover:bg-[#0a655f] disabled:bg-[#b8cac3]"><Search size={16} className="mr-2" />Find my answer</Button></div>
+                  <div className="mt-4 flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div className="flex flex-wrap gap-2">{popularQuestions.map((prompt) => <button type="button" key={prompt} onClick={() => chooseQuestion(prompt)} className="rounded-full border border-[#dce7df] bg-[#fbfcf9] px-3 py-1.5 text-xs font-medium text-[#5e7d75] transition hover:border-[#8cbcaf] hover:bg-[#eff7f0] hover:text-[#0f766e]">{prompt}</button>)}</div><Button type="submit" disabled={!question.trim()} className="h-11 shrink-0 rounded-full bg-[#0f766e] px-5 font-semibold text-white shadow-[0_8px_16px_rgba(15,118,110,0.16)] hover:bg-[#0a655f] disabled:bg-[#b8cac3]"><Search size={16} className="mr-2" />Find my answer</Button></div>
                 </div>
               </form>
             </section>
@@ -597,7 +602,7 @@ function Index() {
             ) : (
               <section className="mt-10 grid gap-5 pb-8 md:grid-cols-[1.15fr_0.85fr]">
                 <div className="relative overflow-hidden rounded-[26px] bg-[#e9f2e7] p-6 sm:p-8"><div className="relative z-10 max-w-[430px]"><div className="mb-4 flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-[#0f766e] shadow-sm"><HeartPulse size={20} /></div><h2 className="font-serif text-[27px] font-semibold tracking-[-0.03em] text-[#234b46]">Make your next health conversation easier.</h2><p className="mt-3 text-sm leading-6 text-[#638078]">Understand the basics, spot what matters, and go into your next appointment with better questions.</p><button onClick={() => chooseQuestion("What should I ask my doctor about a new symptom?")} className="mt-5 flex items-center gap-2 text-sm font-bold text-[#0f766e] hover:underline">See an example answer <ArrowUpRight size={15} /></button></div><div className="absolute -bottom-12 -right-8 h-44 w-44 rounded-full border-[22px] border-[#d4e7d5]" /><div className="absolute -right-4 top-8 h-20 w-20 rounded-full bg-[#f5cfbb]/60" /></div>
-                <div className="rounded-[26px] border border-[#d8e4dc] bg-white p-6 sm:p-8"><div className="mb-5 flex items-center justify-between"><div><h2 className="font-serif text-[23px] font-semibold text-[#234b46]">Popular starting points</h2><p className="mt-1 text-xs text-[#829991]">Questions people ask often</p></div><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#f5f7f2] text-[#0f766e]"><MessageCircle size={17} /></span></div><div className="space-y-2">{quickQuestions.map((prompt, index) => <button key={prompt} onClick={() => chooseQuestion(prompt)} className="group flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left transition hover:bg-[#f1f7f1]"><span className="flex items-center gap-3 text-sm text-[#56766e]"><span className="font-serif text-sm italic text-[#b0c1b8]">0{index + 1}</span>{prompt}</span><ChevronRight size={15} className="text-[#aac0b7] transition group-hover:translate-x-1 group-hover:text-[#0f766e]" /></button>)}</div></div>
+                <div className="rounded-[26px] border border-[#d8e4dc] bg-white p-6 sm:p-8"><div className="mb-5 flex items-center justify-between"><div><h2 className="font-serif text-[23px] font-semibold text-[#234b46]">Popular starting points</h2><p className="mt-1 text-xs text-[#829991]">Refreshed for today</p></div><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#f5f7f2] text-[#0f766e]"><MessageCircle size={17} /></span></div><div className="space-y-2">{popularQuestions.map((prompt, index) => <button key={prompt} onClick={() => chooseQuestion(prompt)} className="group flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left transition hover:bg-[#f1f7f1]"><span className="flex items-center gap-3 text-sm text-[#56766e]"><span className="font-serif text-sm italic text-[#b0c1b8]">0{index + 1}</span>{prompt}</span><ChevronRight size={15} className="text-[#aac0b7] transition group-hover:translate-x-1 group-hover:text-[#0f766e]" /></button>)}</div></div>
               </section>
             )}
           </>
