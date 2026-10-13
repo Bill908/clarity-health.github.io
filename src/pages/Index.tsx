@@ -44,6 +44,48 @@ const sourceLinks = [
   { name: "CDC", detail: "Public health recommendations", href: "https://www.cdc.gov/" },
 ];
 
+type QuestionKind = "sleep" | "headache" | "cough" | "fever" | "digestive" | "stress" | "skin" | "medication" | "general";
+type FollowUp = { question: string; answer: string };
+
+const followUpGuidance: Record<QuestionKind, FollowUp[]> = {
+  sleep: [
+    { question: "What can I try tonight?", answer: "Choose one small reset: keep your wake time tomorrow, dim the lights for the last hour, and leave the bed for a quiet activity if you are awake and frustrated. Consistency over several nights matters more than one perfect night." },
+    { question: "When should I get checked?", answer: "Make an appointment if this happens at least three nights a week for three months, affects driving or work, or comes with loud snoring, gasping, or uncomfortable leg sensations." },
+  ],
+  headache: [
+    { question: "What details should I track?", answer: "Record the start time, location, pressure versus throbbing quality, severity, duration, sleep, meals, fluids, menstrual cycle if relevant, and any nausea, light sensitivity, weakness, or vision change." },
+    { question: "When is a headache urgent?", answer: "Seek urgent help for a sudden severe headache, new weakness or numbness, confusion, fainting, a stiff neck with fever, vision loss, or a headache after a head injury." },
+  ],
+  cough: [
+    { question: "What can soothe a mild cough?", answer: "Fluids, rest, avoiding smoke and strong fragrances, and honey for adults can help with comfort. Do not give honey to a child under one year, and check with a pharmacist before combining cough products." },
+    { question: "How long is too long?", answer: "Contact a clinician if a cough lasts more than three weeks, keeps returning, or is disrupting sleep. Get help sooner for breathing difficulty, chest pain, coughing blood, or a high fever." },
+  ],
+  fever: [
+    { question: "How should I monitor it?", answer: "Use the same reliable thermometer and method each time, note the reading and time, and focus on hydration and how the person feels. Age and other symptoms matter more than a single number." },
+    { question: "What makes a fever urgent?", answer: "Get urgent help for confusion, a stiff neck, trouble breathing, a seizure, severe dehydration, or a rapidly worsening condition. For infants and pregnancy, use a lower threshold to call a clinician." },
+  ],
+  digestive: [
+    { question: "How can I stay hydrated?", answer: "Take small, frequent sips. If vomiting or diarrhea continues, an oral rehydration solution can replace water and salts more reliably than plain water alone. Watch for very dark urine, dizziness, or inability to keep fluids down." },
+    { question: "What should I tell a clinician?", answer: "Share when it started, stool or vomit changes, pain location, fever, recent food or travel, sick contacts, new medicines, pregnancy possibility, and whether you can keep fluids down." },
+  ],
+  stress: [
+    { question: "What can I do in the next five minutes?", answer: "Put both feet on the floor, make your exhale a little longer than your inhale for five breaths, name five things you can see, and text someone you trust. If that feels worse, stop and choose a neutral activity instead." },
+    { question: "When should I reach out?", answer: "Consider a clinician or therapist when worry is persistent, hard to control, causing panic, disrupting sleep, or changing work and relationships. If you may hurt yourself or cannot stay safe, seek urgent help now." },
+  ],
+  skin: [
+    { question: "What should I photograph?", answer: "Take a dated photo in natural light with one wider view and one closer view. Note whether it is spreading, painful, warm, blistering, draining, or linked to a new medicine or product." },
+    { question: "What skin changes are urgent?", answer: "Get urgent help for swelling of the lips or tongue, trouble breathing, skin peeling or blistering, or a rapidly spreading rash with fever or feeling very unwell." },
+  ],
+  medication: [
+    { question: "What information do I need?", answer: "Have the exact name, strength, dose, timing, reason for taking it, start date, allergies, and a list of other medicines or supplements. A pharmacist can check interactions quickly." },
+    { question: "What if I missed a dose?", answer: "Check the medication label or ask a pharmacist rather than doubling up. Some medicines have time-sensitive instructions, and prescribed medicines should not be stopped suddenly without guidance." },
+  ],
+  general: [
+    { question: "What should I track next?", answer: "Write down when it started, what makes it better or worse, how it affects daily activities, any measured temperature or other readings, and every medicine or supplement you take." },
+    { question: "How do I decide whether to call?", answer: "Call a clinician when symptoms persist, worsen, keep returning, or interfere with daily life. Seek urgent help for trouble breathing, chest pain, fainting, confusion, sudden weakness, or severe dehydration." },
+  ],
+};
+
 function LogoMark() {
   return (
     <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-[#0f766e] text-white shadow-[0_8px_20px_rgba(15,118,110,0.18)]">
@@ -69,6 +111,7 @@ function Index() {
   const [activeView, setActiveView] = useState<"ask" | "saved">("ask");
   const [answerVisible, setAnswerVisible] = useState(false);
   const [savedQuestions, setSavedQuestions] = useState<string[]>(initialSaved);
+  const [selectedFollowUp, setSelectedFollowUp] = useState<FollowUp | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const answerRef = useRef<HTMLDivElement>(null);
 
@@ -82,7 +125,7 @@ function Index() {
   }, [answerVisible]);
 
   const currentQuestionSaved = savedQuestions.includes(question.trim());
-  const questionKind = useMemo(() => {
+  const questionKind = useMemo((): QuestionKind => {
     const normalized = question.toLowerCase();
     if (normalized.includes("sleep") || normalized.includes("insomnia")) return "sleep";
     if (normalized.includes("headache") || normalized.includes("migraine")) return "headache";
@@ -94,6 +137,8 @@ function Index() {
     if (normalized.includes("medicine") || normalized.includes("medication") || normalized.includes("pill")) return "medication";
     return "general";
   }, [question]);
+
+  const followUps = followUpGuidance[questionKind];
 
   const saveQuestion = () => {
     const trimmed = question.trim();
@@ -108,18 +153,21 @@ function Index() {
   const askQuestion = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!question.trim()) return;
+    setSelectedFollowUp(null);
     setActiveView("ask");
     setAnswerVisible(true);
   };
 
   const chooseQuestion = (prompt: string) => {
     setQuestion(prompt);
+    setSelectedFollowUp(null);
     setAnswerVisible(false);
     setActiveView("ask");
   };
 
   const clearQuestion = () => {
     setQuestion("");
+    setSelectedFollowUp(null);
     setAnswerVisible(false);
   };
 
@@ -280,6 +328,7 @@ function Index() {
                   <article className="overflow-hidden rounded-[26px] border border-[#d8e4dc] bg-white shadow-[0_14px_40px_rgba(40,75,67,0.06)]"><div className="border-b border-[#e6eee7] bg-[#eff7f0] p-6 sm:p-8"><div className="mb-4 flex flex-wrap items-center gap-2"><Badge className="rounded-full border-0 bg-[#d7ecdf] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.13em] text-[#0f766e]">A place to start</Badge><span className="text-xs text-[#759089]">Curated guidance · 5 min read</span></div><p className="mb-2 text-sm font-medium italic text-[#76908a]">“{question.trim()}”</p><h2 id="answer-title" className="max-w-[650px] font-serif text-[32px] font-semibold leading-tight tracking-[-0.035em] text-[#183d3a]">{answerCopy.title}</h2><p className="mt-4 max-w-[700px] text-[16px] leading-7 text-[#4f7068]">{answerCopy.summary}</p></div><div className="p-6 sm:p-8"><h3 className="mb-4 flex items-center gap-2 text-[15px] font-bold text-[#183d3a]"><FileText size={17} className="text-[#0f766e]" /> Helpful things to know</h3><ul className="space-y-4">{answerCopy.points.map((point) => <li key={point} className="flex gap-3 text-[15px] leading-7 text-[#52726b]"><span className="mt-1.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#e8f3e9] text-[#0f766e]"><Check size={12} strokeWidth={3} /></span>{point}</li>)}</ul><div className="mt-7 rounded-2xl border border-[#f3d7c9] bg-[#fff6f0] p-4"><div className="flex gap-3"><TriangleAlert size={18} className="mt-0.5 shrink-0 text-[#d66e54]" /><div><h4 className="text-sm font-bold text-[#8d4939]">When to get more help</h4><p className="mt-1 text-sm leading-6 text-[#885e55]">{answerCopy.next}</p></div></div></div></div></article>
                   <aside className="space-y-5"><div className="rounded-[23px] border border-[#d8e4dc] bg-white p-5"><div className="mb-4 flex items-center gap-2"><span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#e7f2e8] text-[#0f766e]"><Stethoscope size={16} /></span><h3 className="text-sm font-bold text-[#214b45]">Questions for a clinician</h3></div><p className="text-sm leading-6 text-[#68837c]">“What else could cause this pattern?”</p><p className="mt-3 text-sm leading-6 text-[#68837c]">“What changes should make me follow up?”</p><p className="mt-3 border-t border-[#e8f0e9] pt-3 text-xs leading-5 text-[#7a948c]"><span className="font-semibold text-[#4f7169]">A useful detail:</span> {answerCopy.consider}</p><button type="button" className="mt-4 flex items-center gap-1 text-xs font-bold text-[#0f766e] hover:underline">See conversation guide <ChevronRight size={14} /></button></div><div className="rounded-[23px] border border-[#d8e4dc] bg-[#fbfcf9] p-5"><div className="mb-4 flex items-center justify-between"><div className="flex items-center gap-2"><BookOpen size={17} className="text-[#0f766e]" /><h3 className="text-sm font-bold text-[#214b45]">Sources</h3></div><span className="text-[10px] font-bold uppercase tracking-wider text-[#91a69f]">3 reviewed</span></div><div className="space-y-3">{sourceLinks.map((source) => <a href={source.href} target="_blank" rel="noreferrer" key={source.name} className="group flex items-start justify-between gap-2"><span><span className="block text-xs font-semibold text-[#446a62] group-hover:text-[#0f766e]">{source.name}</span><span className="block text-[11px] text-[#91a69f]">{source.detail}</span></span><ExternalLink size={13} className="mt-0.5 shrink-0 text-[#8ba69e]" /></a>)}</div></div></aside>
                 </div>
+                <div className="mt-6 rounded-[23px] border border-[#d8e4dc] bg-[#fbfcf9] p-5 sm:p-6"><div className="flex items-start gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#e7f2e8] text-[#0f766e]"><MessageCircle size={17} /></span><div><h3 className="text-sm font-bold text-[#214b45]">Have a follow-up?</h3><p className="mt-1 text-xs leading-5 text-[#78918b]">Choose a detail and we’ll take the next step with you.</p></div></div><div className="mt-4 flex flex-wrap gap-2">{followUps.map((followUp) => <button type="button" key={followUp.question} onClick={() => setSelectedFollowUp(followUp)} className={`rounded-full border px-3.5 py-2 text-xs font-semibold transition ${selectedFollowUp?.question === followUp.question ? "border-[#0f766e] bg-[#e6f3eb] text-[#0f766e]" : "border-[#d8e4dc] bg-white text-[#5f7b74] hover:border-[#8dbeb1] hover:text-[#0f766e]"}`}>{followUp.question}</button>)}</div>{selectedFollowUp && <div className="mt-4 rounded-2xl border border-[#e3eee5] bg-white p-4"><div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-[#0f766e]"><Sparkles size={13} /> A more specific next step</div><p className="mt-2 text-sm leading-6 text-[#52726b]">{selectedFollowUp.answer}</p></div>}</div>
                 <div className="mt-6 flex items-start gap-2 px-1 text-xs leading-5 text-[#8ba09a]"><Info size={14} className="mt-0.5 shrink-0" />Clarity provides general educational information, not a diagnosis or personalized medical advice. If you’re worried about a symptom, a qualified healthcare professional can help.</div>
               </section>
             ) : (
