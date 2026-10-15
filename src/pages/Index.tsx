@@ -70,7 +70,7 @@ const dailySources = [
 
 type QuestionKind = "sleep" | "headache" | "cough" | "cold" | "fever" | "digestive" | "allergies" | "bloodPressure" | "hydration" | "stress" | "mentalHealth" | "skin" | "medication" | "soreThroat" | "doctorVisit" | "recurring" | "pharmacist" | "general";
 type FollowUp = { question: string; answer: string };
-type HealthAnswer = { title: string; summary: string; points: string[]; next: string; consider: string; clinicianType: string; followUps: FollowUp[] };
+type HealthAnswer = { title: string; summary: string; points: string[]; next: string; consider: string; clinicianType: string; followUps: FollowUp[]; source?: "ai" | "fallback" };
 type CommunityReply = { id: string; question_id: string; body: string; created_at: string };
 type CommunityQuestion = { id: string; title: string; body: string; topic: string; created_at: string; replies: CommunityReply[] };
 type CareCoordinates = { latitude: number; longitude: number; label: string };
@@ -351,7 +351,7 @@ function Index() {
     const { data, error } = await supabase.functions.invoke("answer-health", {
       body: { question: trimmedQuestion },
     });
-    if (!error && data?.title && Array.isArray(data.points) && Array.isArray(data.followUps)) {
+    if (!error && data?.source !== "fallback" && data?.title && Array.isArray(data.points) && Array.isArray(data.followUps)) {
       setAiAnswer(data as HealthAnswer);
     }
     setAnswerLoading(false);
@@ -390,7 +390,7 @@ function Index() {
     setAnswerLoading(true);
     setAnswerVisible(true);
     const { data, error } = await supabase.functions.invoke("answer-health", { body: { question: nextQuestion } });
-    if (!error && data?.title && Array.isArray(data.points) && Array.isArray(data.followUps)) setAiAnswer(data as HealthAnswer);
+    if (!error && data?.source !== "fallback" && data?.title && Array.isArray(data.points) && Array.isArray(data.followUps)) setAiAnswer(data as HealthAnswer);
     setAnswerLoading(false);
   };
 

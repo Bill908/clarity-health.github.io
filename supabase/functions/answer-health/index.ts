@@ -29,6 +29,7 @@ function fallbackAnswer(question: string) {
           : "primary-care clinician";
 
   return {
+    source: "fallback",
     title: `A clear next step for: ${question}`,
     summary: `You asked about “${question}.” The safest answer depends on details such as when it started, how severe it is, what makes it better or worse, your age, medicines, and medical history. Start by recording those details so the guidance fits your situation rather than treating a general answer as a diagnosis.`,
     points: [
