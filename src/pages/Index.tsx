@@ -103,7 +103,7 @@ function findMatchingFaq(question: string) {
       bestMatch = faq;
     }
   }
-  return bestScore >= 0.65 ? bestMatch : null;
+  return bestScore >= 0.5 ? bestMatch : null;
 }
 
 function buildFaqAnswer(faq: HealthFaq): HealthAnswer {
@@ -442,6 +442,12 @@ function Index() {
     setAiAnswer(null);
     setAnswerLoading(true);
     setAnswerVisible(true);
+    const matchedFaq = findMatchingFaq(nextQuestion);
+    if (matchedFaq) {
+      setAiAnswer(buildFaqAnswer(matchedFaq));
+      setAnswerLoading(false);
+      return;
+    }
     const { data, error } = await supabase.functions.invoke("answer-health", { body: { question: nextQuestion } });
     if (!error && data?.source !== "fallback" && data?.title && Array.isArray(data.points) && Array.isArray(data.followUps)) setAiAnswer(data as HealthAnswer);
     setAnswerLoading(false);
