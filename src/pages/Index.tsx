@@ -36,6 +36,7 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { useSessionContext } from "@/components/SessionContextProvider";
+import { HealthFaq, healthFaqs } from "@/data/healthFaqs";
 
 const dailyQuestionSets = [
   ["How can I get better sleep?", "What helps with a tension headache?", "When should I see a doctor for a cough?"],
@@ -70,12 +71,54 @@ const dailySources = [
 
 type QuestionKind = "sleep" | "headache" | "cough" | "cold" | "fever" | "digestive" | "allergies" | "bloodPressure" | "hydration" | "stress" | "mentalHealth" | "skin" | "medication" | "soreThroat" | "doctorVisit" | "recurring" | "pharmacist" | "general";
 type FollowUp = { question: string; answer: string };
-type HealthAnswer = { title: string; summary: string; points: string[]; next: string; consider: string; clinicianType: string; followUps: FollowUp[]; source?: "ai" | "fallback" };
+type HealthAnswer = { title: string; summary: string; points: string[]; next: string; consider: string; clinicianType: string; followUps: FollowUp[]; source?: "ai" | "faq" | "fallback" };
 type CommunityReply = { id: string; question_id: string; body: string; created_at: string };
 type CommunityQuestion = { id: string; title: string; body: string; topic: string; created_at: string; replies: CommunityReply[] };
 type CareCoordinates = { latitude: number; longitude: number; label: string };
 type CarePlace = { id: string; name: string; latitude: number; longitude: number; address: string; phone: string; distanceKm: number };
 type OverpassElement = { id: number; lat?: number; lon?: number; center?: { lat: number; lon: number }; tags?: Record<string, string> };
+
+const faqStopWords = new Set(["a", "an", "and", "are", "can", "do", "does", "how", "is", "the", "to", "what", "when", "where", "why", "you", "your"]);
+
+function faqTokens(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((token) => token.length > 2 && !faqStopWords.has(token));
+}
+
+function findMatchingFaq(question: string) {
+  const normalizedQuestion = question.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+  const exact = healthFaqs.find((faq) => faq.question.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim() === normalizedQuestion);
+  if (exact) return exact;
+  const questionTokens = new Set(faqTokens(question));
+  let bestMatch: HealthFaq | null = null;
+  let bestScore = 0;
+  for (const faq of healthFaqs) {
+    const faqTokenList = faqTokens(faq.question);
+    const shared = faqTokenList.filter((token) => questionTokens.has(token)).length;
+    const score = shared / Math.max(faqTokenList.length, questionTokens.size, 1);
+    if (score > bestScore) {
+      bestScore = score;
+      bestMatch = faq;
+    }
+  }
+  return bestScore >= 0.65 ? bestMatch : null;
+}
+
+function buildFaqAnswer(faq: HealthFaq): HealthAnswer {
+  const clinicianType = faq.category.includes("neurological") ? "primary-care clinician or neurologist" : faq.category.includes("infection") ? "primary-care clinician or pharmacist" : "primary-care clinician";
+  return {
+    source: "faq",
+    title: faq.question,
+    summary: faq.answer,
+    points: [faq.answer, `This answer comes from the ${faq.category} guide.`, "If your symptoms are severe, worsening, unusual for you, or not improving, get advice rather than relying on general information."],
+    next: "Seek emergency services for trouble breathing, chest pain, fainting, confusion, sudden weakness, severe bleeding, or rapidly worsening symptoms.",
+    consider: "Note when the symptom began, how severe it is, what makes it better or worse, and any related symptoms.",
+    clinicianType,
+    followUps: [
+      { question: "What details should I track?", answer: "Track timing, severity, related symptoms, exposures, medicines, and whether the problem is improving or worsening." },
+      { question: "When should I see a clinician?", answer: `Contact a ${clinicianType} if the problem persists, worsens, keeps returning, or affects daily activities.` },
+    ],
+  };
+}
 
 const followUpGuidance: Record<QuestionKind, FollowUp[]> = {
   sleep: [
@@ -347,6 +390,13 @@ function Index() {
     setAnswerLoading(true);
     setActiveView("ask");
     setAnswerVisible(true);
+
+    const matchedFaq = findMatchingFaq(trimmedQuestion);
+    if (matchedFaq) {
+      setAiAnswer(buildFaqAnswer(matchedFaq));
+      setAnswerLoading(false);
+      return;
+    }
 
     const { data, error } = await supabase.functions.invoke("answer-health", {
       body: { question: trimmedQuestion },
@@ -785,7 +835,7 @@ function Index() {
                 <div className="mb-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.16em] text-[#0f766e]"><span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#dceddf]"><Check size={13} strokeWidth={3} /></span> Your Clarity answer</div><button type="button" onClick={saveQuestion} className="flex items-center gap-2 self-start rounded-full px-3 py-1.5 text-xs font-semibold text-[#53746d] transition hover:bg-white hover:text-[#0f766e] sm:self-auto">{currentQuestionSaved ? <BookmarkCheck size={15} className="text-[#0f766e]" /> : <Bookmark size={15} />} {currentQuestionSaved ? "Saved to your library" : "Save for later"}</button></div>
 <div className="mb-5 rounded-[23px] border border-[#d8e4dc] bg-white p-4 shadow-[0_8px_25px_rgba(40,75,67,0.04)] sm:p-5"><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><div className="flex items-start gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#e7f2e8] text-[#0f766e]"><PenLine size={17} /></span><div><h3 className="text-sm font-bold text-[#214b45]">Build on this question</h3><p className="mt-1 text-xs leading-5 text-[#78918b]">Keep the context and ask for the next layer of detail.</p></div></div><button type="button" onClick={() => setBuildOnOpen(!buildOnOpen)} className="flex items-center gap-2 self-start rounded-full border border-[#cfe2d5] px-3.5 py-2 text-xs font-bold text-[#0f766e] transition hover:bg-[#eff7f0] sm:self-auto">{buildOnOpen ? <X size={14} /> : <Plus size={14} />} {buildOnOpen ? "Close" : "Continue this question"}</button></div>{buildOnOpen && <form onSubmit={buildOnQuestion} className="mt-4 border-t border-[#e8f0e9] pt-4"><Textarea ref={buildOnRef} value={buildOnDraft} onChange={(event) => setBuildOnDraft(event.target.value)} required maxLength={500} placeholder="e.g. What should I watch for over the next few days?" className="min-h-[88px] rounded-xl border-[#d8e4dc] bg-[#fbfcf9] text-sm leading-6 focus-visible:ring-[#0f766e]" aria-label="Build on your question" /><div className="mt-3 flex justify-end"><Button type="submit" disabled={!buildOnDraft.trim()} className="h-10 rounded-full bg-[#0f766e] px-4 text-xs font-semibold text-white hover:bg-[#0a655f] disabled:bg-[#b8cac3]">Ask this follow-up <ArrowUpRight size={14} className="ml-1" /></Button></div></form>}</div>
                 <div className="grid gap-5 lg:grid-cols-[1fr_290px]">
-                  <article className="overflow-hidden rounded-[26px] border border-[#d8e4dc] bg-white shadow-[0_14px_40px_rgba(40,75,67,0.06)]"><div className="border-b border-[#e6eee7] bg-[#eff7f0] p-6 sm:p-8"><div className="mb-4 flex flex-wrap items-center gap-2"><Badge className="rounded-full border-0 bg-[#d7ecdf] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.13em] text-[#0f766e]">A place to start</Badge><span className="text-xs text-[#759089]">{aiAnswer ? "AI-tailored guidance" : "Curated guidance"} · 5 min read</span></div><p className="mb-2 text-sm font-medium italic text-[#76908a]">“{question.trim()}”</p>{answerLoading && <p className="mb-3 text-xs font-semibold text-[#0f766e]">Thinking through your exact question…</p>}<h2 id="answer-title" className="max-w-[650px] font-serif text-[32px] font-semibold leading-tight tracking-[-0.035em] text-[#183d3a]">{displayedAnswer.title}</h2><p className="mt-4 max-w-[700px] text-[16px] leading-7 text-[#4f7068]">{displayedAnswer.summary}</p></div><div className="p-6 sm:p-8"><h3 className="mb-4 flex items-center gap-2 text-[15px] font-bold text-[#183d3a]"><FileText size={17} className="text-[#0f766e]" /> Helpful things to know</h3><ul className="space-y-4">{displayedAnswer.points.map((point) => <li key={point} className="flex gap-3 text-[15px] leading-7 text-[#52726b]"><span className="mt-1.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#e8f3e9] text-[#0f766e]"><Check size={12} strokeWidth={3} /></span>{point}</li>)}</ul><div className="mt-7 rounded-2xl border border-[#f3d7c9] bg-[#fff6f0] p-4"><div className="flex gap-3"><TriangleAlert size={18} className="mt-0.5 shrink-0 text-[#d66e54]" /><div><h4 className="text-sm font-bold text-[#8d4939]">When to get more help</h4><p className="mt-1 text-sm leading-6 text-[#885e55]">{displayedAnswer.next}</p></div></div></div></div></article>
+                  <article className="overflow-hidden rounded-[26px] border border-[#d8e4dc] bg-white shadow-[0_14px_40px_rgba(40,75,67,0.06)]"><div className="border-b border-[#e6eee7] bg-[#eff7f0] p-6 sm:p-8"><div className="mb-4 flex flex-wrap items-center gap-2"><Badge className="rounded-full border-0 bg-[#d7ecdf] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.13em] text-[#0f766e]">A place to start</Badge><span className="text-xs text-[#759089]">{aiAnswer?.source === "faq" ? "Matched health guide" : aiAnswer ? "AI-tailored guidance" : "Curated guidance"} · 5 min read</span></div><p className="mb-2 text-sm font-medium italic text-[#76908a]">“{question.trim()}”</p>{answerLoading && <p className="mb-3 text-xs font-semibold text-[#0f766e]">Thinking through your exact question…</p>}<h2 id="answer-title" className="max-w-[650px] font-serif text-[32px] font-semibold leading-tight tracking-[-0.035em] text-[#183d3a]">{displayedAnswer.title}</h2><p className="mt-4 max-w-[700px] text-[16px] leading-7 text-[#4f7068]">{displayedAnswer.summary}</p></div><div className="p-6 sm:p-8"><h3 className="mb-4 flex items-center gap-2 text-[15px] font-bold text-[#183d3a]"><FileText size={17} className="text-[#0f766e]" /> Helpful things to know</h3><ul className="space-y-4">{displayedAnswer.points.map((point) => <li key={point} className="flex gap-3 text-[15px] leading-7 text-[#52726b]"><span className="mt-1.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#e8f3e9] text-[#0f766e]"><Check size={12} strokeWidth={3} /></span>{point}</li>)}</ul><div className="mt-7 rounded-2xl border border-[#f3d7c9] bg-[#fff6f0] p-4"><div className="flex gap-3"><TriangleAlert size={18} className="mt-0.5 shrink-0 text-[#d66e54]" /><div><h4 className="text-sm font-bold text-[#8d4939]">When to get more help</h4><p className="mt-1 text-sm leading-6 text-[#885e55]">{displayedAnswer.next}</p></div></div></div></div></article>
                   <aside className="space-y-5"><div className="rounded-[23px] border border-[#d8e4dc] bg-white p-5"><div className="mb-4 flex items-center gap-2"><span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#e7f2e8] text-[#0f766e]"><Stethoscope size={16} /></span><h3 className="text-sm font-bold text-[#214b45]">Questions for a clinician</h3></div><p className="text-sm leading-6 text-[#68837c]">“What else could cause this pattern?”</p><p className="mt-3 text-sm leading-6 text-[#68837c]">“What changes should make me follow up?”</p><p className="mt-3 text-xs font-semibold text-[#0f766e]">Best fit: {displayedAnswer.clinicianType}</p><p className="mt-3 border-t border-[#e8f0e9] pt-3 text-xs leading-5 text-[#7a948c]"><span className="font-semibold text-[#4f7169]">A useful detail:</span> {displayedAnswer.consider}</p><button type="button" onClick={() => setGuideOpen(!guideOpen)} className="mt-4 flex items-center gap-1 text-xs font-bold text-[#0f766e] hover:underline">{guideOpen ? "Hide conversation guide" : "Open conversation guide"} <ChevronRight size={14} className={guideOpen ? "rotate-90" : ""} /></button>{guideOpen && <div className="mt-4 rounded-2xl border border-[#dce9df] bg-[#fbfcf9] p-4"><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#0f766e]">A calmer appointment starts with a clear story</p><ol className="mt-3 space-y-3 text-xs leading-5 text-[#5f7b74]"><li><span className="mr-2 font-bold text-[#0f766e]">01</span>Lead with one sentence: “I’ve noticed ___ since ___, and it is affecting ___.”</li><li><span className="mr-2 font-bold text-[#0f766e]">02</span>Describe the pattern: what makes it better or worse, how often it happens, and what has changed.</li><li><span className="mr-2 font-bold text-[#0f766e]">03</span>Ask: “What are the likely causes, and what would make you want to test or treat this differently?”</li><li><span className="mr-2 font-bold text-[#0f766e]">04</span>Close the loop: “What should I watch for, when should I follow up, and who do I contact if it changes?”</li></ol><div className="mt-4 border-t border-[#e5eee7] pt-3 text-xs leading-5 text-[#78918b]"><strong className="text-[#4f7169]">Bring along:</strong> a medication and supplement list, symptom timeline, home readings, and your top three questions.</div></div>}</div><div className="rounded-[23px] border border-[#d8e4dc] bg-[#fbfcf9] p-5"><div className="mb-4 flex items-center justify-between"><div className="flex items-center gap-2"><BookOpen size={17} className="text-[#0f766e]" /><h3 className="text-sm font-bold text-[#214b45]">Sources</h3></div><span className="text-[10px] font-bold uppercase tracking-wider text-[#91a69f]">3 reviewed</span></div><div className="space-y-3">{sourceLinks.map((source) => <a href={source.href} target="_blank" rel="noreferrer" key={source.name} className="group flex items-start justify-between gap-2"><span><span className="block text-xs font-semibold text-[#446a62] group-hover:text-[#0f766e]">{source.name}</span><span className="block text-[11px] text-[#91a69f]">{source.detail}</span></span><ExternalLink size={13} className="mt-0.5 shrink-0 text-[#8ba69e]" /></a>)}</div></div></aside>
                 </div>
                 <div className="mt-6 rounded-[23px] border border-[#d8e4dc] bg-[#fbfcf9] p-5 sm:p-6"><div className="flex items-start gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#e7f2e8] text-[#0f766e]"><MessageCircle size={17} /></span><div><h3 className="text-sm font-bold text-[#214b45]">Have a follow-up?</h3><p className="mt-1 text-xs leading-5 text-[#78918b]">Choose a detail and we’ll take the next step with you.</p></div></div><div className="mt-4 flex flex-wrap gap-2">{displayedAnswer.followUps.map((followUp) => <button type="button" key={followUp.question} onClick={() => setSelectedFollowUp(followUp)} className={`rounded-full border px-3.5 py-2 text-xs font-semibold transition ${selectedFollowUp?.question === followUp.question ? "border-[#0f766e] bg-[#e6f3eb] text-[#0f766e]" : "border-[#d8e4dc] bg-white text-[#5f7b74] hover:border-[#8dbeb1] hover:text-[#0f766e]"}`}>{followUp.question}</button>)}</div>{selectedFollowUp && <div className="mt-4 rounded-2xl border border-[#e3eee5] bg-white p-4"><div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-[#0f766e]"><Sparkles size={13} /> A more specific next step</div><p className="mt-2 text-sm leading-6 text-[#52726b]">{selectedFollowUp.answer}</p></div>}</div>
