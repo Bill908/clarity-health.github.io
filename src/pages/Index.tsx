@@ -395,17 +395,13 @@ function Index() {
     setAnswerVisible(true);
 
     const matchedFaq = findMatchingFaq(trimmedQuestion);
-    if (matchedFaq) {
-      setAiAnswer(buildFaqAnswer(matchedFaq));
-      setAnswerLoading(false);
-      return;
-    }
-
     const { data, error } = await supabase.functions.invoke("answer-health", {
-      body: { question: trimmedQuestion },
+      body: { question: trimmedQuestion, guide: matchedFaq },
     });
     if (!error && data?.source !== "fallback" && data?.title && Array.isArray(data.points) && Array.isArray(data.followUps)) {
-      setAiAnswer(data as HealthAnswer);
+      setAiAnswer({ ...(data as HealthAnswer), source: matchedFaq ? "ai" : data.source });
+    } else if (matchedFaq) {
+      setAiAnswer(buildFaqAnswer(matchedFaq));
     }
     setAnswerLoading(false);
   };
@@ -443,13 +439,12 @@ function Index() {
     setAnswerLoading(true);
     setAnswerVisible(true);
     const matchedFaq = findMatchingFaq(nextQuestion);
-    if (matchedFaq) {
+    const { data, error } = await supabase.functions.invoke("answer-health", { body: { question: nextQuestion, guide: matchedFaq } });
+    if (!error && data?.source !== "fallback" && data?.title && Array.isArray(data.points) && Array.isArray(data.followUps)) {
+      setAiAnswer({ ...(data as HealthAnswer), source: matchedFaq ? "ai" : data.source });
+    } else if (matchedFaq) {
       setAiAnswer(buildFaqAnswer(matchedFaq));
-      setAnswerLoading(false);
-      return;
     }
-    const { data, error } = await supabase.functions.invoke("answer-health", { body: { question: nextQuestion } });
-    if (!error && data?.source !== "fallback" && data?.title && Array.isArray(data.points) && Array.isArray(data.followUps)) setAiAnswer(data as HealthAnswer);
     setAnswerLoading(false);
   };
 
