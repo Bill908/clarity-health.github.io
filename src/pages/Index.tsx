@@ -37,6 +37,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { useSessionContext } from "@/components/SessionContextProvider";
 import { HealthFaq, healthFaqs } from "@/data/healthFaqs";
+import { healthFaqsExtended } from "@/data/healthFaqsExtended";
+
+const allHealthFaqs = [...healthFaqs, ...healthFaqsExtended];
 
 const dailyQuestionSets = [
   ["How can I get better sleep?", "What helps with a tension headache?", "When should I see a doctor for a cough?"],
@@ -86,12 +89,12 @@ function faqTokens(value: string) {
 
 function findMatchingFaq(question: string) {
   const normalizedQuestion = question.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
-  const exact = healthFaqs.find((faq) => faq.question.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim() === normalizedQuestion);
+  const exact = allHealthFaqs.find((faq) => faq.question.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim() === normalizedQuestion);
   if (exact) return exact;
   const questionTokens = new Set(faqTokens(question));
   let bestMatch: HealthFaq | null = null;
   let bestScore = 0;
-  for (const faq of healthFaqs) {
+  for (const faq of allHealthFaqs) {
     const faqTokenList = faqTokens(faq.question);
     const shared = faqTokenList.filter((token) => questionTokens.has(token)).length;
     const score = shared / Math.max(faqTokenList.length, questionTokens.size, 1);
