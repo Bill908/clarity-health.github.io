@@ -16,20 +16,42 @@ const responseShape = {
   followUps: [{ question: "A focused follow-up question", answer: "A useful answer to that follow-up" }],
 };
 
+function fallbackAnswer(question: string) {
+  const normalized = question.toLowerCase();
+  const clinicianType = normalized.includes("medicine") || normalized.includes("medication") || normalized.includes("pill")
+    ? "pharmacist"
+    : normalized.includes("rash") || normalized.includes("skin") || normalized.includes("itch")
+      ? "primary-care clinician or dermatologist"
+      : normalized.includes("anxiety") || normalized.includes("depress") || normalized.includes("stress")
+        ? "primary-care clinician or therapist"
+        : normalized.includes("child") || normalized.includes("baby") || normalized.includes("infant")
+          ? "pediatrician"
+          : "primary-care clinician";
+
+  return {
+    title: `A clear next step for: ${question}`,
+    summary: `You asked about “${question}.” The safest answer depends on details such as when it started, how severe it is, what makes it better or worse, your age, medicines, and medical history. Start by recording those details so the guidance fits your situation rather than treating a general answer as a diagnosis.`,
+    points: [
+      `Track the timing, severity, related symptoms, and anything that changed before or after ${question.toLowerCase()}.`,
+      `Use only low-risk comfort measures that fit your symptoms, and check with a ${clinicianType} before starting, stopping, or combining medicines.`,
+      `Arrange a conversation with a ${clinicianType} if this persists, worsens, keeps returning, or interferes with normal activities.`,
+    ],
+    next: "Seek emergency services now for trouble breathing, chest pain, fainting, confusion, sudden weakness, severe bleeding, or rapidly worsening symptoms.",
+    consider: `What is the most important detail about “${question}”: when it began, how bad it is, or what other symptom appeared with it?`,
+    clinicianType,
+    followUps: [
+      { question: "What details would make the answer more specific?", answer: "Share your age group, when this started, severity, related symptoms, medicines, relevant conditions, and whether it is improving or worsening." },
+      { question: "When should I get checked?", answer: `Contact a ${clinicianType} if the concern persists, worsens, recurs, or affects daily life. Use emergency services for severe or rapidly worsening symptoms.` },
+    ],
+  };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ error: "Use POST for health questions." }), {
       status: 405,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-
-  const apiKey = Deno.env.get("OPENAI_API_KEY");
-  if (!apiKey) {
-    return new Response(JSON.stringify({ error: "AI answer service is not configured." }), {
-      status: 503,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
@@ -44,7 +66,14 @@ serve(async (req) => {
       });
     }
 
-    const prompt = `Answer this health question: ${question}`;
+    const apiKey = Deno.env.get("OPENAI_API_KEY");
+    if (!apiKey) {
+      console.warn("[answer-health] OPENAI_API_KEY is not configured; returning a safe tailored fallback");
+      return new Response(JSON.stringify(fallbackAnswer(question)), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const openAiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
@@ -57,15 +86,14 @@ serve(async (req) => {
             role: "system",
             content: `You are Clarity, a careful health education assistant. Give a direct answer tailored to the exact question, but never diagnose, prescribe, or pretend to know missing personal details. Ask focused follow-up questions when the answer depends on age, pregnancy, medicines, duration, severity, or medical history. Include practical self-care only when generally safe. Always include urgent warning signs, a clear clinician disclaimer, and the most appropriate type of healthcare professional (for example pharmacist, primary-care clinician, dermatologist, therapist, pediatrician, or emergency clinician). Be empathetic and concise. Return valid JSON matching this shape exactly: ${JSON.stringify(responseShape)}. Include exactly three points and two followUps. The next field must mention emergency services for life-threatening symptoms.`,
           },
-          { role: "user", content: prompt },
+          { role: "user", content: `Answer this health question: ${question}` },
         ],
       }),
     });
 
     if (!openAiResponse.ok) {
       console.error("[answer-health] OpenAI request failed", { status: openAiResponse.status });
-      return new Response(JSON.stringify({ error: "The answer service is temporarily unavailable." }), {
-        status: 502,
+      return new Response(JSON.stringify(fallbackAnswer(question)), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -74,8 +102,7 @@ serve(async (req) => {
     const content = completion.choices?.[0]?.message?.content;
     if (typeof content !== "string") throw new Error("The answer service returned no content");
 
-    const answer = JSON.parse(content);
-    return new Response(JSON.stringify(answer), {
+    return new Response(JSON.stringify(JSON.parse(content)), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
