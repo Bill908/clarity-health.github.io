@@ -75,7 +75,8 @@ serve(async (req) => {
       return jsonResponse({ error: "Please provide a question up to 500 characters." }, 400);
     }
 
-    const apiKey = Deno.env.get("GROQ_API_KEY");
+    const configuredApiKey = Deno.env.get("GROQ_API_KEY")?.trim();
+    const apiKey = configuredApiKey?.replace(/^Bearer\s+/i, "").replace(/^['"]|['"]$/g, "");
     if (!apiKey) {
       console.warn("[answer-health] GROQ_API_KEY is not configured; returning a safe tailored fallback");
       return jsonResponse(fallbackAnswer(question));
