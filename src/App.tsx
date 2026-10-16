@@ -10,6 +10,10 @@ import AuthCallback from "./pages/AuthCallback";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
+const firstPathSegment = typeof window === "undefined" ? "" : window.location.pathname.split("/").filter(Boolean)[0] ?? "";
+const githubPagesBase = typeof window !== "undefined" && window.location.hostname.endsWith("github.io") && firstPathSegment && !["login", "auth"].includes(firstPathSegment)
+  ? `/${firstPathSegment}`
+  : undefined;
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -17,7 +21,7 @@ const App = () => (
       <TooltipProvider>
         <Toaster />
         <Sonner />
-        <BrowserRouter>
+        <BrowserRouter basename={githubPagesBase}>
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/login" element={<Login />} />
