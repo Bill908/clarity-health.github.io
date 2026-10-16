@@ -450,7 +450,15 @@ function Index() {
 
   const submitCommunityQuestion = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!session || !communityConsent || !communityTitle.trim() || !communityBody.trim()) return;
+    if (!session) {
+      setCommunityError("Please sign in before posting to the community.");
+      return;
+    }
+    if (!communityConsent) {
+      setCommunityError("Please confirm the community privacy note before posting.");
+      return;
+    }
+    if (!communityTitle.trim() || !communityBody.trim()) return;
     setCommunitySubmitting(true);
     setCommunityError("");
     const { data, error } = await supabase.from("community_questions").insert({
@@ -473,7 +481,19 @@ function Index() {
 
   const submitCommunityReply = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!session || !communityConsent || !selectedCommunityId || !replyBody.trim()) return;
+    if (!session) {
+      setCommunityError("Please sign in before replying to the community.");
+      return;
+    }
+    if (!selectedCommunityId) {
+      setCommunityError("Choose a community question before replying.");
+      return;
+    }
+    if (!communityConsent) {
+      setCommunityError("Please confirm the community privacy note before replying.");
+      return;
+    }
+    if (!replyBody.trim()) return;
     setCommunitySubmitting(true);
     setCommunityError("");
     const { error } = await supabase.from("community_replies").insert({
