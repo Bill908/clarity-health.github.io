@@ -86,7 +86,7 @@ serve(async (req) => {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
-        model: "llama-3.3-70b-versatile",
+        model: "llama-3.1-8b-instant",
         temperature: 0.2,
         response_format: { type: "json_object" },
         messages: [
@@ -100,7 +100,8 @@ serve(async (req) => {
     });
 
     if (!groqResponse.ok) {
-      console.error("[answer-health] Groq request failed", { status: groqResponse.status });
+      const errorDetails = await groqResponse.text();
+      console.error("[answer-health] Groq request failed", { status: groqResponse.status, details: errorDetails.slice(0, 300) });
       return jsonResponse(fallbackAnswer(question));
     }
 
