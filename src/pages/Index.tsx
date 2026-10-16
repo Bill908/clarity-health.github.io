@@ -520,9 +520,9 @@ function Index() {
 
   const selectedCommunityQuestion = communityQuestions.find((item) => item.id === selectedCommunityId) ?? null;
 
-  const loadNearbyCare = async (latitude: number, longitude: number, label: string, providerQuery = "") => {
-    const approximateLatitude = Math.round(latitude * 100) / 100;
-    const approximateLongitude = Math.round(longitude * 100) / 100;
+  const loadNearbyCare = async (latitude: number, longitude: number, label: string, providerQuery = "", roundCoordinates = true) => {
+    const approximateLatitude = roundCoordinates ? Math.round(latitude * 100) / 100 : latitude;
+    const approximateLongitude = roundCoordinates ? Math.round(longitude * 100) / 100 : longitude;
     const providerTerm = providerQuery.trim();
     const providerFilter = providerTerm
       ? `[~\"name|operator|healthcare|healthcare:speciality|speciality|description\"~\"${escapeOverpassRegex(providerTerm)}\",i]`
@@ -590,7 +590,7 @@ function Index() {
       }
       const result = results[0];
       if (!result) throw new Error("location-not-found");
-      await loadNearbyCare(Number(result.lat), Number(result.lon), result.display_name.split(",").slice(0, 2).join(","), providerTerm);
+      await loadNearbyCare(Number(result.lat), Number(result.lon), result.display_name.split(",").slice(0, 2).join(","), providerTerm, false);
     } catch {
       setCareLoading(false);
       setCareError("We couldn’t find that location. Try a city, ZIP code, or neighborhood.");
