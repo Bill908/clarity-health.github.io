@@ -47,14 +47,18 @@ function fallbackAnswer(question: string) {
   };
 }
 
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "Use POST for health questions." }), {
-      status: 405,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return jsonResponse({ error: "Use POST for health questions." }, 405);
   }
 
   try {
@@ -66,26 +70,22 @@ serve(async (req) => {
       && typeof body.guide.answer === "string"
       ? body.guide
       : null;
+
     if (!question || question.length > 500) {
-      return new Response(JSON.stringify({ error: "Please provide a question up to 500 characters." }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse({ error: "Please provide a question up to 500 characters." }, 400);
     }
 
-    const apiKey = Deno.env.get("OPENAI_API_KEY");
+    const apiKey = Deno.env.get("GROQ_API_KEY");
     if (!apiKey) {
-      console.warn("[answer-health] OPENAI_API_KEY is not configured; returning a safe tailored fallback");
-      return new Response(JSON.stringify(fallbackAnswer(question)), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      console.warn("[answer-health] GROQ_API_KEY is not configured; returning a safe tailored fallback");
+      return jsonResponse(fallbackAnswer(question));
     }
 
-    const openAiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+    const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
+        model: "llama-3.3-70b-versatile",
         temperature: 0.2,
         response_format: { type: "json_object" },
         messages: [
@@ -98,25 +98,23 @@ serve(async (req) => {
       }),
     });
 
-    if (!openAiResponse.ok) {
-      console.error("[answer-health] OpenAI request failed", { status: openAiResponse.status });
-      return new Response(JSON.stringify(fallbackAnswer(question)), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    if (!groqResponse.ok) {
+      console.error("[answer-health] Groq request failed", { status: groqResponse.status });
+      return jsonResponse(fallbackAnswer(question));
     }
 
-    const completion = await openAiResponse.json();
+    const completion = await groqResponse.json();
     const content = completion.choices?.[0]?.message?.content;
     if (typeof content !== "string") throw new Error("The answer service returned no content");
 
-    return new Response(JSON.stringify(JSON.parse(content)), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    const answer = JSON.parse(content);
+    if (!answer || typeof answer !== "object" || typeof answer.title !== "string" || typeof answer.summary !== "string" || !Array.isArray(answer.points) || typeof answer.next !== "string" || typeof answer.consider !== "string" || typeof answer.clinicianType !== "string" || !Array.isArray(answer.followUps)) {
+      throw new Error("The answer service returned an invalid response shape");
+    }
+
+    return jsonResponse({ ...answer, source: "ai" });
   } catch (error) {
     console.error("[answer-health] Failed to create answer", { error });
-    return new Response(JSON.stringify({ error: "The answer service is temporarily unavailable." }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return jsonResponse({ error: "The answer service is temporarily unavailable." }, 500);
   }
 });
