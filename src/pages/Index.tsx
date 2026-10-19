@@ -249,6 +249,8 @@ function Index() {
   const [answerVisible, setAnswerVisible] = useState(false);
   const [answerLoading, setAnswerLoading] = useState(false);
   const [aiAnswer, setAiAnswer] = useState<HealthAnswer | null>(null);
+  const [aiPrivacyConsent, setAiPrivacyConsent] = useState(false);
+  const [aiPrivacyError, setAiPrivacyError] = useState("");
   const [savedQuestions, setSavedQuestions] = useState<string[]>(initialSaved);
   const [selectedFollowUp, setSelectedFollowUp] = useState<FollowUp | null>(null);
   const [guideOpen, setGuideOpen] = useState(false);
@@ -394,6 +396,15 @@ function Index() {
     event.preventDefault();
     const trimmedQuestion = question.trim();
     if (!trimmedQuestion) return;
+    if (!session) {
+      setAiPrivacyError("Please sign in before sending a health question for an AI answer.");
+      return;
+    }
+    if (!aiPrivacyConsent) {
+      setAiPrivacyError("Please review and accept the privacy note before sending your question to Groq.");
+      return;
+    }
+    setAiPrivacyError("");
     setSelectedFollowUp(null);
     setGuideOpen(false);
     setBuildOnOpen(false);
@@ -405,7 +416,7 @@ function Index() {
 
     const matchedFaq = findMatchingFaq(trimmedQuestion);
     const { data, error } = await supabase.functions.invoke("answer-health", {
-      body: { question: trimmedQuestion, guide: matchedFaq },
+      body: { question: trimmedQuestion, privacyConsent: true },
     });
     if (!error && data?.source !== "fallback" && data?.title && Array.isArray(data.points) && Array.isArray(data.followUps)) {
       setAiAnswer({ ...(data as HealthAnswer), source: matchedFaq ? "ai" : data.source });
@@ -448,7 +459,7 @@ function Index() {
     setAnswerLoading(true);
     setAnswerVisible(true);
     const matchedFaq = findMatchingFaq(nextQuestion);
-    const { data, error } = await supabase.functions.invoke("answer-health", { body: { question: nextQuestion, guide: matchedFaq } });
+    const { data, error } = await supabase.functions.invoke("answer-health", { body: { question: nextQuestion, privacyConsent: true } });
     if (!error && data?.source !== "fallback" && data?.title && Array.isArray(data.points) && Array.isArray(data.followUps)) {
       setAiAnswer({ ...(data as HealthAnswer), source: matchedFaq ? "ai" : data.source });
     } else if (matchedFaq) {
@@ -868,6 +879,7 @@ function Index() {
               <form onSubmit={askQuestion} className="relative overflow-hidden rounded-[28px] border border-[#d8e4dc] bg-white p-5 shadow-[0_14px_40px_rgba(40,75,67,0.07)] sm:p-7">
                 <div className="absolute right-0 top-0 h-24 w-24 rounded-bl-[70px] bg-[#edf5eb]" />
                 <div className="relative"><div className="mb-2 flex items-center gap-2 text-[#0f766e]"><PenLine size={17} /><span className="text-[11px] font-bold uppercase tracking-[0.16em]">Start with what you’re wondering</span></div><h2 id="ask-title" className="font-serif text-[27px] font-semibold tracking-[-0.025em] text-[#183d3a]">What’s on your mind today?</h2><p className="mt-1 text-sm text-[#78918b]">Ask about a symptom, a condition, or a health decision.</p>
+                  <div className="mt-4 rounded-2xl border border-[#f0d8c9] bg-[#fff8f3] p-3.5"><p className="text-xs leading-5 text-[#765b52]"><span className="font-bold text-[#8d4939]">Before your first AI answer:</span> your question will be sent to Groq, an external AI provider, for processing. Groq’s own processing and retention policies apply; Clarity cannot promise deletion or zero retention. Do not include names, contact details, or information that identifies you, and do not submit protected health information unless you have confirmed the required healthcare privacy controls.</p><label className="mt-3 flex items-start gap-2 text-xs font-semibold leading-5 text-[#765b52]"><input type="checkbox" checked={aiPrivacyConsent} onChange={(event) => { setAiPrivacyConsent(event.target.checked); setAiPrivacyError(""); }} className="mt-1 h-4 w-4 shrink-0 accent-[#0f766e]" />I understand and consent to sending this question to Groq for an AI-generated educational answer.</label>{aiPrivacyError && <p className="mt-2 text-xs font-bold text-[#b45b47]">{aiPrivacyError}</p>}</div>
                   <div className="relative mt-5"><Textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="e.g. Why do I keep waking up tired?" className="min-h-[124px] resize-none rounded-[18px] border-[#d6e4dc] bg-[#fbfcf9] px-4 py-4 text-[16px] leading-7 text-[#224944] placeholder:text-[#a7b9b2] focus-visible:ring-[#0f766e]" aria-label="Your health question" /><span className="absolute bottom-3 right-3 text-[11px] text-[#a3b4ad]">{question.length}/500</span></div>
                   <div className="mt-4 flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div className="flex flex-wrap gap-2">{popularQuestions.map((prompt) => <button type="button" key={prompt} onClick={() => chooseQuestion(prompt)} className="rounded-full border border-[#dce7df] bg-[#fbfcf9] px-3 py-1.5 text-xs font-medium text-[#5e7d75] transition hover:border-[#8cbcaf] hover:bg-[#eff7f0] hover:text-[#0f766e]">{prompt}</button>)}</div><Button type="submit" disabled={!question.trim()} className="h-11 shrink-0 rounded-full bg-[#0f766e] px-5 font-semibold text-white shadow-[0_8px_16px_rgba(15,118,110,0.16)] hover:bg-[#0a655f] disabled:bg-[#b8cac3]"><Search size={16} className="mr-2" />Find my answer</Button></div>
                 </div>
