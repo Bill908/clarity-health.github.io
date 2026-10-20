@@ -8,6 +8,7 @@ const corsHeaders = {
 };
 const maxBodyBytes = 8_000;
 const maxQuestionLength = 500;
+const consentVersion = "groq-health-v1";
 
 const responseShape = {
   title: "A short, reassuring title specific to the question",
@@ -19,12 +20,21 @@ const responseShape = {
   followUps: [{ question: "A focused follow-up question", answer: "A useful answer to that follow-up" }],
 };
 
-function redactObviousIdentifiers(value: string) {
+function deidentifyQuestion(value: string) {
   return value
     .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[email removed]")
     .replace(/\b(?:\+?\d[\d\s().-]{7,}\d)\b/g, "[phone removed]")
     .replace(/\b\d{3}-\d{2}-\d{4}\b/g, "[identifier removed]")
-    .replace(/\b\d{5}(?:-\d{4})?\b/g, "[postal code removed]");
+    .replace(/\b\d{5}(?:-\d{4})?\b/g, "[postal code removed]")
+    .replace(/\b(?:mrn|medical record(?: number)?|patient id|account number|member id|policy number|claim number)\s*[:#-]?\s*[A-Z0-9-]+\b/gi, "[medical identifier removed]")
+    .replace(/\b(?:date of birth|dob|birth date)\s*[:#-]?\s*[^,.;\n]+/gi, "[date of birth removed]")
+    .replace(/\b(?:my name is|name)\s*[:#-]?\s*[A-Za-z][A-Za-z' -]{1,60}/gi, "[name removed]")
+    .replace(/\b(?:home|street|mailing|residential) address\s*[:#-]?\s*[^,.;\n]+/gi, "[address removed]")
+    .replace(/\b\d{1,5}\s+[A-Za-z0-9.' -]+\s+(?:street|st|avenue|ave|road|rd|boulevard|blvd|lane|ln|drive|dr|court|ct|way)\b[^,.;\n]*/gi, "[address removed]")
+    .replace(/\b(?:i work at|my employer is|employer|company)\s*[:#-]?\s*[^,.;\n]+/gi, "[employer removed]")
+    .replace(/\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}(?:,\s*\d{4})?\b|\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b/gi, "[date removed]")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 function fallbackAnswer(question: string) {
@@ -86,9 +96,9 @@ serve(async (req) => {
     const rawBody = await req.text();
     if (new TextEncoder().encode(rawBody).byteLength > maxBodyBytes) return jsonResponse({ error: "The request is too large." }, 413);
     const body = JSON.parse(rawBody);
-    if (body.privacyConsent !== true) return jsonResponse({ error: "Privacy consent is required before using the external AI provider." }, 400);
+    if (body.privacyConsent !== true || body.privacyConsentVersion !== consentVersion) return jsonResponse({ error: "Current privacy consent is required before using the external AI provider." }, 400);
 
-    const question = typeof body.question === "string" ? redactObviousIdentifiers(body.question.trim()) : "";
+    const question = typeof body.question === "string" ? deidentifyQuestion(body.question.trim()) : "";
     if (!question || question.length > maxQuestionLength) return jsonResponse({ error: "Please provide a question up to 500 characters." }, 400);
 
     const configuredApiKey = Deno.env.get("GROQ_API_KEY")?.trim();
@@ -108,7 +118,7 @@ serve(async (req) => {
         messages: [
           {
             role: "system",
-            content: `You are Clarity, a careful health education assistant. Give a direct answer tailored to the exact question, but never diagnose, prescribe, or pretend to know missing personal details. Ask focused follow-up questions when the answer depends on age, pregnancy, medicines, duration, severity, or medical history. Include practical self-care only when generally safe. Always include urgent warning signs, a clear clinician disclaimer, and the most appropriate type of healthcare professional. Be empathetic and concise. Return valid JSON matching this shape exactly: ${JSON.stringify(responseShape)}. Include exactly three points and two followUps. The next field must mention emergency services for life-threatening symptoms.`,
+            content: `You are Clarity, a careful health education assistant. Give a direct answer tailored to the exact question, but never diagnose, prescribe, or pretend to know missing personal details. Ask focused follow-up questions when the answer depends on age, pregnancy, medicines, duration, severity, or medical history. Include practical self-care only when generally safe. Always include urgent warning signs, a clear clinician disclaimer, and the most appropriate type of healthcare professional. Be empathetic and concise. The user question has been server-side de-identified. Do not try to infer or reconstruct removed personal information. Return valid JSON matching this shape exactly: ${JSON.stringify(responseShape)}. Include exactly three points and two followUps. The next field must mention emergency services for life-threatening symptoms.`,
           },
           { role: "user", content: question },
         ],

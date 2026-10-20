@@ -51,10 +51,7 @@ const dailyQuestionSets = [
   ["How can I support my mental health?", "What should I track about a recurring symptom?", "When should I call a pharmacist?"],
 ];
 
-const initialSaved = [
-  "How can I get better sleep?",
-  "What does a tension headache feel like?",
-];
+const healthConsentVersion = "groq-health-v1";
 
 const sourceLinks = [
   { name: "National Institutes of Health", detail: "Evidence & research", href: "https://www.nih.gov/" },
@@ -251,7 +248,7 @@ function Index() {
   const [aiAnswer, setAiAnswer] = useState<HealthAnswer | null>(null);
   const [aiPrivacyConsent, setAiPrivacyConsent] = useState(false);
   const [aiPrivacyError, setAiPrivacyError] = useState("");
-  const [savedQuestions, setSavedQuestions] = useState<string[]>(initialSaved);
+  const [savedQuestions, setSavedQuestions] = useState<string[]>([]);
   const [selectedFollowUp, setSelectedFollowUp] = useState<FollowUp | null>(null);
   const [guideOpen, setGuideOpen] = useState(false);
   const [dailyBriefingOpen, setDailyBriefingOpen] = useState(false);
@@ -330,17 +327,22 @@ function Index() {
   }, [requestedView]);
 
   useEffect(() => {
-    const storedQuestions = window.localStorage.getItem("clarity-health-saved");
-    if (storedQuestions) setSavedQuestions(JSON.parse(storedQuestions));
     setLocationConsent(window.localStorage.getItem("clarity-location-consent") === "accepted");
   }, []);
 
   useEffect(() => {
+    window.localStorage.removeItem("clarity-health-saved");
     if (!session) {
+      setSavedQuestions([]);
       setCommunityConsent(false);
       return;
     }
+    let active = true;
+    supabase.from("saved_health_questions").select("question").order("created_at", { ascending: false }).then(({ data }) => {
+      if (active) setSavedQuestions((data ?? []).map((row) => row.question));
+    });
     setCommunityConsent(window.localStorage.getItem(`clarity-community-consent-${session.user.id}`) === "accepted");
+    return () => { active = false; };
   }, [session]);
 
   useEffect(() => {
@@ -382,14 +384,19 @@ function Index() {
 
   const followUps = followUpGuidance[questionKind];
 
-  const saveQuestion = () => {
+  const saveQuestion = async () => {
     const trimmed = question.trim();
-    if (!trimmed) return;
-    const next = currentQuestionSaved
-      ? savedQuestions.filter((savedQuestion) => savedQuestion !== trimmed)
-      : [trimmed, ...savedQuestions];
-    setSavedQuestions(next);
-    window.localStorage.setItem("clarity-health-saved", JSON.stringify(next));
+    if (!trimmed || !session) {
+      if (!session) setAiPrivacyError("Please sign in before saving a health question.");
+      return;
+    }
+    if (currentQuestionSaved) {
+      await supabase.from("saved_health_questions").delete().eq("user_id", session.user.id).eq("question", trimmed);
+      setSavedQuestions((current) => current.filter((savedQuestion) => savedQuestion !== trimmed));
+      return;
+    }
+    const { error } = await supabase.from("saved_health_questions").insert({ user_id: session.user.id, question: trimmed });
+    if (!error) setSavedQuestions((current) => [trimmed, ...current]);
   };
 
   const askQuestion = async (event: FormEvent<HTMLFormElement>) => {
@@ -416,7 +423,7 @@ function Index() {
 
     const matchedFaq = findMatchingFaq(trimmedQuestion);
     const { data, error } = await supabase.functions.invoke("answer-health", {
-      body: { question: trimmedQuestion, privacyConsent: true },
+      body: { question: trimmedQuestion, privacyConsent: true, privacyConsentVersion: healthConsentVersion },
     });
     if (!error && data?.source !== "fallback" && data?.title && Array.isArray(data.points) && Array.isArray(data.followUps)) {
       setAiAnswer({ ...(data as HealthAnswer), source: matchedFaq ? "ai" : data.source });
@@ -449,6 +456,10 @@ function Index() {
   const buildOnQuestion = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!question.trim() || !buildOnDraft.trim()) return;
+    if (!session || !aiPrivacyConsent) {
+      setAiPrivacyError(!session ? "Please sign in before sending a health question for an AI answer." : "Please review and accept the privacy note before sending your question to Groq.");
+      return;
+    }
     const nextQuestion = `${question.trim()} Follow-up: ${buildOnDraft.trim()}`;
     setQuestion(nextQuestion);
     setBuildOnDraft("");
@@ -459,7 +470,7 @@ function Index() {
     setAnswerLoading(true);
     setAnswerVisible(true);
     const matchedFaq = findMatchingFaq(nextQuestion);
-    const { data, error } = await supabase.functions.invoke("answer-health", { body: { question: nextQuestion, privacyConsent: true } });
+    const { data, error } = await supabase.functions.invoke("answer-health", { body: { question: nextQuestion, privacyConsent: true, privacyConsentVersion: healthConsentVersion } });
     if (!error && data?.source !== "fallback" && data?.title && Array.isArray(data.points) && Array.isArray(data.followUps)) {
       setAiAnswer({ ...(data as HealthAnswer), source: matchedFaq ? "ai" : data.source });
     } else if (matchedFaq) {
@@ -879,7 +890,7 @@ function Index() {
               <form onSubmit={askQuestion} className="relative overflow-hidden rounded-[28px] border border-[#d8e4dc] bg-white p-5 shadow-[0_14px_40px_rgba(40,75,67,0.07)] sm:p-7">
                 <div className="absolute right-0 top-0 h-24 w-24 rounded-bl-[70px] bg-[#edf5eb]" />
                 <div className="relative"><div className="mb-2 flex items-center gap-2 text-[#0f766e]"><PenLine size={17} /><span className="text-[11px] font-bold uppercase tracking-[0.16em]">Start with what you’re wondering</span></div><h2 id="ask-title" className="font-serif text-[27px] font-semibold tracking-[-0.025em] text-[#183d3a]">What’s on your mind today?</h2><p className="mt-1 text-sm text-[#78918b]">Ask about a symptom, a condition, or a health decision.</p>
-                  <div className="mt-4 rounded-2xl border border-[#f0d8c9] bg-[#fff8f3] p-3.5"><p className="text-xs leading-5 text-[#765b52]"><span className="font-bold text-[#8d4939]">Before your first AI answer:</span> your question will be sent to Groq, an external AI provider, for processing. Groq’s own processing and retention policies apply; Clarity cannot promise deletion or zero retention. Do not include names, contact details, or information that identifies you, and do not submit protected health information unless you have confirmed the required healthcare privacy controls.</p><label className="mt-3 flex items-start gap-2 text-xs font-semibold leading-5 text-[#765b52]"><input type="checkbox" checked={aiPrivacyConsent} onChange={(event) => { setAiPrivacyConsent(event.target.checked); setAiPrivacyError(""); }} className="mt-1 h-4 w-4 shrink-0 accent-[#0f766e]" />I understand and consent to sending this question to Groq for an AI-generated educational answer.</label>{aiPrivacyError && <p className="mt-2 text-xs font-bold text-[#b45b47]">{aiPrivacyError}</p>}</div>
+                  <div className="mt-4 rounded-2xl border border-[#f0d8c9] bg-[#fff8f3] p-3.5"><p className="text-xs leading-5 text-[#765b52]"><span className="font-bold text-[#8d4939]">Before your first AI answer:</span> your question is de-identified on Clarity’s server, then sent to Groq, an external provider. Groq’s processing, retention, and geographic-processing policies apply; Clarity cannot promise deletion or zero retention. Do not include names, dates of birth, addresses, record numbers, employer details, rare conditions, or other identifying information. This de-identification is defense in depth, not a guarantee.</p><label className="mt-3 flex items-start gap-2 text-xs font-semibold leading-5 text-[#765b52]"><input type="checkbox" checked={aiPrivacyConsent} onChange={(event) => { setAiPrivacyConsent(event.target.checked); setAiPrivacyError(""); }} className="mt-1 h-4 w-4 shrink-0 accent-[#0f766e]" />I understand and consent to sending this question to Groq for an AI-generated educational answer.</label>{aiPrivacyError && <p className="mt-2 text-xs font-bold text-[#b45b47]">{aiPrivacyError}</p>}</div>
                   <div className="relative mt-5"><Textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="e.g. Why do I keep waking up tired?" className="min-h-[124px] resize-none rounded-[18px] border-[#d6e4dc] bg-[#fbfcf9] px-4 py-4 text-[16px] leading-7 text-[#224944] placeholder:text-[#a7b9b2] focus-visible:ring-[#0f766e]" aria-label="Your health question" /><span className="absolute bottom-3 right-3 text-[11px] text-[#a3b4ad]">{question.length}/500</span></div>
                   <div className="mt-4 flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div className="flex flex-wrap gap-2">{popularQuestions.map((prompt) => <button type="button" key={prompt} onClick={() => chooseQuestion(prompt)} className="rounded-full border border-[#dce7df] bg-[#fbfcf9] px-3 py-1.5 text-xs font-medium text-[#5e7d75] transition hover:border-[#8cbcaf] hover:bg-[#eff7f0] hover:text-[#0f766e]">{prompt}</button>)}</div><Button type="submit" disabled={!question.trim()} className="h-11 shrink-0 rounded-full bg-[#0f766e] px-5 font-semibold text-white shadow-[0_8px_16px_rgba(15,118,110,0.16)] hover:bg-[#0a655f] disabled:bg-[#b8cac3]"><Search size={16} className="mr-2" />Find my answer</Button></div>
                 </div>
@@ -905,7 +916,7 @@ function Index() {
             )}
           </>
         ) : activeView === "saved" ? (
-          <section className="pb-10 pt-12 md:pt-16"><div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><div className="mb-3 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-[#0f766e]"><History size={15} /> Your private library</div><h1 className="font-serif text-[44px] font-semibold tracking-[-0.05em] text-[#173e3a]">Saved for later<span className="text-[#e2755e]">.</span></h1><p className="mt-3 text-[16px] text-[#718b84]">A quiet place for the questions you want to revisit.</p></div><button onClick={() => { setActiveView("ask"); setAnswerVisible(false); }} className="flex items-center gap-2 self-start rounded-full bg-[#0f766e] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0a655f]"><PenLine size={15} /> Ask something new</button></div>{savedQuestions.length ? <div className="grid gap-4 md:grid-cols-2">{savedQuestions.map((savedQuestion, index) => <div key={savedQuestion} className="group rounded-[23px] border border-[#d8e4dc] bg-white p-5 shadow-[0_8px_25px_rgba(40,75,67,0.04)] transition hover:-translate-y-0.5 hover:shadow-[0_12px_30px_rgba(40,75,67,0.08)]"><div className="mb-6 flex items-center justify-between"><span className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-[#8aa29a]"><Clock3 size={14} /> Saved question 0{index + 1}</span><button onClick={() => { setQuestion(savedQuestion); setSavedQuestions(savedQuestions.filter((item) => item !== savedQuestion)); }} className="rounded-full p-1.5 text-[#9bb0aa] opacity-0 transition hover:bg-[#fff2ed] hover:text-[#d66e54] group-hover:opacity-100" aria-label={`Remove ${savedQuestion}`}><X size={15} /></button></div><p className="font-serif text-[22px] font-semibold leading-snug text-[#234b46]">{savedQuestion}</p><button onClick={() => { setQuestion(savedQuestion); setActiveView("ask"); setAnswerVisible(true); }} className="mt-5 flex items-center gap-1 text-xs font-bold text-[#0f766e]">Open answer <ArrowUpRight size={14} /></button></div>)}</div> : <div className="rounded-[26px] border border-dashed border-[#c9dcd0] bg-white/50 p-12 text-center"><Bookmark size={26} className="mx-auto text-[#8aada0]" /><p className="mt-4 font-serif text-2xl font-semibold text-[#315951]">Your library is waiting.</p><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[#819a91]">Save an answer while you explore and it will show up here in this browser.</p></div>}<div className="mt-8 flex items-start gap-2 text-xs leading-5 text-[#8ba09a]"><ShieldCheck size={14} className="mt-0.5 shrink-0 text-[#0f766e]" />Your saved questions stay in this browser. Create an account later if you’d like to sync them across devices.</div></section>
+          <section className="pb-10 pt-12 md:pt-16"><div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><div className="mb-3 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-[#0f766e]"><History size={15} /> Your private library</div><h1 className="font-serif text-[44px] font-semibold tracking-[-0.05em] text-[#173e3a]">Saved for later<span className="text-[#e2755e]">.</span></h1><p className="mt-3 text-[16px] text-[#718b84]">A quiet place for the questions you want to revisit.</p></div><button onClick={() => { setActiveView("ask"); setAnswerVisible(false); }} className="flex items-center gap-2 self-start rounded-full bg-[#0f766e] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0a655f]"><PenLine size={15} /> Ask something new</button></div>{savedQuestions.length ? <div className="grid gap-4 md:grid-cols-2">{savedQuestions.map((savedQuestion, index) => <div key={savedQuestion} className="group rounded-[23px] border border-[#d8e4dc] bg-white p-5 shadow-[0_8px_25px_rgba(40,75,67,0.04)] transition hover:-translate-y-0.5 hover:shadow-[0_12px_30px_rgba(40,75,67,0.08)]"><div className="mb-6 flex items-center justify-between"><span className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-[#8aa29a]"><Clock3 size={14} /> Saved question 0{index + 1}</span><button onClick={() => { setQuestion(savedQuestion); void supabase.from("saved_health_questions").delete().eq("user_id", session?.user.id ?? "").eq("question", savedQuestion); setSavedQuestions(savedQuestions.filter((item) => item !== savedQuestion)); }} className="rounded-full p-1.5 text-[#9bb0aa] opacity-0 transition hover:bg-[#fff2ed] hover:text-[#d66e54] group-hover:opacity-100" aria-label={`Remove ${savedQuestion}`}><X size={15} /></button></div><p className="font-serif text-[22px] font-semibold leading-snug text-[#234b46]">{savedQuestion}</p><button onClick={() => { setQuestion(savedQuestion); setActiveView("ask"); setAnswerVisible(true); }} className="mt-5 flex items-center gap-1 text-xs font-bold text-[#0f766e]">Open answer <ArrowUpRight size={14} /></button></div>)}</div> : <div className="rounded-[26px] border border-dashed border-[#c9dcd0] bg-white/50 p-12 text-center"><Bookmark size={26} className="mx-auto text-[#8aada0]" /><p className="mt-4 font-serif text-2xl font-semibold text-[#315951]">Your library is waiting.</p><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[#819a91]">Save an answer while you explore and it will show up here for your signed-in account.</p></div>}<div className="mt-8 flex items-start gap-2 text-xs leading-5 text-[#8ba09a]"><ShieldCheck size={14} className="mt-0.5 shrink-0 text-[#0f766e]" />Your saved questions are tied to your signed-in account and protected by row-level access controls.</div></section>
         ) : activeView === "community" ? (
           sessionLoading ? (
             <section className="flex min-h-[440px] items-center justify-center py-16"><div className="flex items-center gap-3 rounded-full border border-[#d8e4dc] bg-white px-5 py-3 text-sm font-semibold text-[#52726b] shadow-sm"><RefreshCw size={17} className="animate-spin text-[#0f766e]" /> Checking your community access…</div></section>
