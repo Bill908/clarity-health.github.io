@@ -8,7 +8,15 @@ const corsHeaders = {
 };
 const maxBodyBytes = 8_000;
 const maxQuestionLength = 500;
+const maxAnswerFieldLength = 2_000;
 const consentVersion = "groq-health-v1";
+
+function containsLikelyPersonalInformation(value: string) {
+  return /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i.test(value)
+    || /\b(?:\+?\d[\d\s().-]{7,}\d)\b/.test(value)
+    || /\b\d{3}-\d{2}-\d{4}\b/.test(value)
+    || /\b(?:date of birth|dob|birth date|medical record|patient id|account number|member id|policy number|claim number|home address|street address|my name is|i work at|my employer is)\b/i.test(value);
+}
 
 const responseShape = {
   title: "A short, reassuring title specific to the question",
@@ -93,13 +101,22 @@ serve(async (req) => {
 
     const contentLength = Number(req.headers.get("content-length") ?? 0);
     if (contentLength > maxBodyBytes) return jsonResponse({ error: "The request is too large." }, 413);
+    const contentType = req.headers.get("content-type") ?? "";
+    if (!contentType.toLowerCase().includes("application/json")) return jsonResponse({ error: "Send the question as JSON." }, 415);
     const rawBody = await req.text();
     if (new TextEncoder().encode(rawBody).byteLength > maxBodyBytes) return jsonResponse({ error: "The request is too large." }, 413);
-    const body = JSON.parse(rawBody);
+    let body: Record<string, unknown>;
+    try {
+      body = JSON.parse(rawBody);
+    } catch {
+      return jsonResponse({ error: "The request body is not valid JSON." }, 400);
+    }
     if (body.privacyConsent !== true || body.privacyConsentVersion !== consentVersion) return jsonResponse({ error: "Current privacy consent is required before using the external AI provider." }, 400);
 
-    const question = typeof body.question === "string" ? deidentifyQuestion(body.question.trim()) : "";
-    if (!question || question.length > maxQuestionLength) return jsonResponse({ error: "Please provide a question up to 500 characters." }, 400);
+    const submittedQuestion = typeof body.question === "string" ? body.question.trim() : "";
+    if (!submittedQuestion || submittedQuestion.length > maxQuestionLength) return jsonResponse({ error: "Please provide a question up to 500 characters." }, 400);
+    if (containsLikelyPersonalInformation(submittedQuestion)) return jsonResponse({ error: "For your privacy, remove names, contact details, record numbers, dates of birth, addresses, employer details, or other identifying information before sending this question." }, 400);
+    const question = deidentifyQuestion(submittedQuestion);
 
     const configuredApiKey = Deno.env.get("GROQ_API_KEY")?.trim();
     const apiKey = configuredApiKey?.replace(/^Bearer\s+/i, "").replace(/^['"]|['"]$/g, "");
@@ -110,6 +127,7 @@ serve(async (req) => {
 
     const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
+      signal: AbortSignal.timeout(15_000),
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
         model: "openai/gpt-oss-20b",
@@ -135,7 +153,9 @@ serve(async (req) => {
     const content = completion.choices?.[0]?.message?.content;
     if (typeof content !== "string") throw new Error("The answer service returned no content");
     const answer = JSON.parse(content);
-    if (!answer || typeof answer !== "object" || typeof answer.title !== "string" || typeof answer.summary !== "string" || !Array.isArray(answer.points) || typeof answer.next !== "string" || typeof answer.consider !== "string" || typeof answer.clinicianType !== "string" || !Array.isArray(answer.followUps)) throw new Error("The answer service returned an invalid response shape");
+    const isBoundedString = (value: unknown) => typeof value === "string" && value.trim().length > 0 && value.length <= maxAnswerFieldLength;
+    const hasValidFollowUp = (value: unknown): value is { question: string; answer: string } => Boolean(value && typeof value === "object" && isBoundedString((value as { question?: unknown }).question) && isBoundedString((value as { answer?: unknown }).answer));
+    if (!answer || typeof answer !== "object" || !isBoundedString(answer.title) || !isBoundedString(answer.summary) || !Array.isArray(answer.points) || answer.points.length !== 3 || !answer.points.every(isBoundedString) || !isBoundedString(answer.next) || !isBoundedString(answer.consider) || !isBoundedString(answer.clinicianType) || !Array.isArray(answer.followUps) || answer.followUps.length !== 2 || !answer.followUps.every(hasValidFollowUp)) throw new Error("The answer service returned an invalid response shape");
     return jsonResponse({ ...answer, source: "ai" });
   } catch (error) {
     console.error("[answer-health] Failed to create answer", { error });
