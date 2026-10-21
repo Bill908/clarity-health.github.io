@@ -1,4 +1,3 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 
 const corsHeaders = {
@@ -88,16 +87,6 @@ serve(async (req) => {
   if (req.method !== "POST") return jsonResponse({ error: "Use POST for health questions." }, 405);
 
   try {
-    const authorization = req.headers.get("Authorization");
-    if (!authorization?.startsWith("Bearer ")) return jsonResponse({ error: "Sign in to ask a health question." }, 401);
-
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_ANON_KEY") ?? "",
-      { global: { headers: { Authorization: authorization } } },
-    );
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError || !user) return jsonResponse({ error: "Your session is invalid or has expired." }, 401);
 
     const contentLength = Number(req.headers.get("content-length") ?? 0);
     if (contentLength > maxBodyBytes) return jsonResponse({ error: "The request is too large." }, 413);

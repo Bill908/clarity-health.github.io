@@ -403,10 +403,6 @@ function Index() {
     event.preventDefault();
     const trimmedQuestion = question.trim();
     if (!trimmedQuestion) return;
-    if (!session) {
-      setAiPrivacyError("Please sign in before sending a health question for an AI answer.");
-      return;
-    }
     if (!aiPrivacyConsent) {
       setAiPrivacyError("Please review and accept the privacy note before sending your question to Groq.");
       return;
@@ -456,8 +452,8 @@ function Index() {
   const buildOnQuestion = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!question.trim() || !buildOnDraft.trim()) return;
-    if (!session || !aiPrivacyConsent) {
-      setAiPrivacyError(!session ? "Please sign in before sending a health question for an AI answer." : "Please review and accept the privacy note before sending your question to Groq.");
+    if (!aiPrivacyConsent) {
+      setAiPrivacyError("Please review and accept the privacy note before sending your question to Groq.");
       return;
     }
     const nextQuestion = `${question.trim()} Follow-up: ${buildOnDraft.trim()}`;
