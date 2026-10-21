@@ -563,7 +563,8 @@ function Index() {
         const key = `${item.id}-${latitudeValue}-${longitudeValue}`;
         if (seen.has(key)) return null;
         seen.add(key);
-        const address = [tags["addr:housenumber"], tags["addr:street"], tags["addr:city"], tags["addr:postcode"]].filter(Boolean).join(" ") || "Address not listed";
+        const street = [tags["addr:housenumber"], tags["addr:street"]].filter(Boolean).join(" ");
+        const address = [street, tags["addr:city"], tags["addr:state"]].filter(Boolean).join(", ") || "Address not listed";
         return {
           id: key,
           name: tags.name || tags["name:en"] || "Doctor office",
