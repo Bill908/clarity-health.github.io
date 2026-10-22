@@ -29,6 +29,9 @@ jobs:
       - name: Build website
         run: npm run build
 
+      - name: Add Android platform
+        run: npx cap add android
+
       - name: Sync Android project
         run: npx cap sync android
 
