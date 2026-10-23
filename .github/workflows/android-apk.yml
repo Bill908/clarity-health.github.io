@@ -15,7 +15,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: 'npm' # ✅ Will work now that package-lock.json is committed
+          cache: 'npm'
+          cache-dependency-path: 'app/package-lock.json' # ✅ Point to your lockfile
 
       - name: Update npm
         run: npm install -g npm@11.6.0
@@ -30,10 +31,12 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install dependencies
-        run: npm ci # ✅ Uses the committed lockfile for a clean, fast install
+        run: npm ci
+        working-directory: app # ✅ Run install inside the correct directory
 
       - name: Build website
         run: npm run build
+        working-directory: app
 
       - name: Add Android platform (if missing)
         run: |
@@ -42,19 +45,22 @@ jobs:
           else
             echo "Android directory already exists, skipping cap add."
           fi
+        working-directory: app
 
       - name: Sync Android project
         run: npx cap sync android
+        working-directory: app
 
       - name: Make Gradle wrapper executable
         run: chmod +x android/gradlew
+        working-directory: app
 
       - name: Build APK
-        working-directory: android
+        working-directory: app/android
         run: ./gradlew assembleDebug
 
       - name: Save APK
         uses: actions/upload-artifact@v4
         with:
           name: android-apk
-          path: android/app/build/outputs/apk/debug/*.apk
+          path: app/android/app/build/outputs/apk/debug/*.apk
