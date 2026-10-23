@@ -16,7 +16,8 @@ jobs:
         with:
           node-version: 24
           cache: 'npm'
-          cache-dependency-path: 'app/package-lock.json' # ✅ Point to your lockfile
+          # ✅ This wildcard tells setup-node to find the lockfile anywhere in the repo
+          cache-dependency-path: '**/package-lock.json' 
 
       - name: Update npm
         run: npm install -g npm@11.6.0
@@ -31,36 +32,39 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install dependencies
+        # If your project is in a subfolder (e.g., 'app'), uncomment the next line:
+        # working-directory: ./app 
         run: npm ci
-        working-directory: app # ✅ Run install inside the correct directory
 
       - name: Build website
+        # working-directory: ./app
         run: npm run build
-        working-directory: app
 
       - name: Add Android platform (if missing)
+        # working-directory: ./app
         run: |
           if [ ! -d "android" ]; then
             npx cap add android
           else
             echo "Android directory already exists, skipping cap add."
           fi
-        working-directory: app
 
       - name: Sync Android project
+        # working-directory: ./app
         run: npx cap sync android
-        working-directory: app
 
       - name: Make Gradle wrapper executable
+        # working-directory: ./app
         run: chmod +x android/gradlew
-        working-directory: app
 
       - name: Build APK
-        working-directory: app/android
+        working-directory: android
+        # If in a subfolder, use: working-directory: ./app/android
         run: ./gradlew assembleDebug
 
       - name: Save APK
         uses: actions/upload-artifact@v4
         with:
           name: android-apk
-          path: app/android/app/build/outputs/apk/debug/*.apk
+          # If in a subfolder, use: path: app/android/app/build/outputs/apk/debug/*.apk
+          path: android/app/build/outputs/apk/debug/*.apk
