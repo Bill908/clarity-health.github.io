@@ -16,7 +16,8 @@ jobs:
         with:
           node-version: 24
           cache: 'npm'
-          cache-dependency-path: 'package-lock.json'
+          # Find the lockfile at the repository root or in a project subfolder.
+          cache-dependency-path: '**/package-lock.json'
 
       - name: Update npm
         run: npm install -g npm@11.6.0
@@ -31,12 +32,16 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install dependencies
-        run: npm ci # ✅ Uses the committed lockfile for a clean, fast install
+        # If your project is in a subfolder (e.g., 'app'), uncomment the next line:
+        # working-directory: ./app 
+        run: npm ci
 
       - name: Build website
+        # working-directory: ./app
         run: npm run build
 
       - name: Add Android platform (if missing)
+        # working-directory: ./app
         run: |
           if [ ! -d "android" ]; then
             npx cap add android
@@ -45,17 +50,21 @@ jobs:
           fi
 
       - name: Sync Android project
+        # working-directory: ./app
         run: npx cap sync android
 
       - name: Make Gradle wrapper executable
+        # working-directory: ./app
         run: chmod +x android/gradlew
 
       - name: Build APK
         working-directory: android
+        # If in a subfolder, use: working-directory: ./app/android
         run: ./gradlew assembleDebug
 
       - name: Save APK
         uses: actions/upload-artifact@v4
         with:
           name: android-apk
+          # If in a subfolder, use: path: app/android/app/build/outputs/apk/debug/*.apk
           path: android/app/build/outputs/apk/debug/*.apk
