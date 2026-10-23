@@ -15,7 +15,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: 'npm' # ✅ Works now that package-lock.json exists
+          cache: 'npm' # ✅ Will work now that package-lock.json is committed
 
       - name: Update npm
         run: npm install -g npm@11.6.0
@@ -30,7 +30,7 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install dependencies
-        run: npm ci # ✅ Uses the committed lockfile
+        run: npm ci # ✅ Uses the committed lockfile for a clean, fast install
 
       - name: Build website
         run: npm run build
