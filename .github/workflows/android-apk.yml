@@ -15,7 +15,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: 'npm' # Caches npm dependencies for faster builds
+          cache: 'npm' # ✅ Works now that package-lock.json exists
 
       - name: Update npm
         run: npm install -g npm@11.6.0
@@ -30,7 +30,7 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install dependencies
-        run: npm ci # ✅ CRITICAL: Uses strict lockfile install to bypass npm's broken resolver
+        run: npm ci # ✅ Uses the committed lockfile
 
       - name: Build website
         run: npm run build
@@ -47,7 +47,7 @@ jobs:
         run: npx cap sync android
 
       - name: Make Gradle wrapper executable
-        run: chmod +x android/gradlew # ✅ CRITICAL: Prevents permission denied errors
+        run: chmod +x android/gradlew
 
       - name: Build APK
         working-directory: android
