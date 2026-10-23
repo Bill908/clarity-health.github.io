@@ -25,9 +25,6 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Install dependencies
         # If your project is in a subfolder (e.g., 'app'), uncomment the next line:
         # working-directory: ./app
