@@ -18,9 +18,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
-
-      - name: Update npm
-        run: npm install -g npm@11.6.0
+          package-manager-cache: false
 
       - name: Set up Java 21
         uses: actions/setup-java@v5
@@ -29,8 +27,6 @@ jobs:
           java-version: 21
 
       - name: Install dependencies
-        # If your project is in a subfolder (e.g., 'app'), uncomment the next line:
-        # working-directory: ./app
         run: npm install
 
       - name: Build website
