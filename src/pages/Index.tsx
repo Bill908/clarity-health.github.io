@@ -960,10 +960,10 @@ function Index() {
             <div>
               <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#0f766e]">Clarity on Android</p>
               <h2 id="android-download-title" className="mt-1 font-serif text-[28px] font-semibold tracking-[-0.03em] text-[#183d3a]">Take clarity with you.</h2>
-              <p className="mt-2 max-w-xl text-sm leading-6 text-[#68837c]">Open the latest Android build on GitHub, download the <span className="font-semibold text-[#45665f]">android-apk</span> artifact, then unzip it to find the app installer.</p>
+              <p className="mt-2 max-w-xl text-sm leading-6 text-[#68837c]">Download the latest Android installer directly. Android may ask you to allow installs from your browser.</p>
             </div>
           </div>
-          <a href="https://github.com/Bill908/clarity-health.github.io/actions/workflows/android-apk.yml" target="_blank" rel="noreferrer" className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-[#0f766e] px-6 text-sm font-semibold text-white shadow-[0_8px_16px_rgba(15,118,110,0.16)] transition hover:bg-[#0a655f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e] focus-visible:ring-offset-2"><Download size={17} />Get Android app</a>
+          <a href="https://github.com/Bill908/clarity-health.github.io/releases/latest/download/app-debug.apk" className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-[#0f766e] px-6 text-sm font-semibold text-white shadow-[0_8px_16px_rgba(15,118,110,0.16)] transition hover:bg-[#0a655f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e] focus-visible:ring-offset-2"><Download size={17} />Download Android app</a>
         </div>
       </section>
 
