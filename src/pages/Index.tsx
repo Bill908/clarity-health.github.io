@@ -963,7 +963,7 @@ function Index() {
               <p className="mt-2 max-w-xl text-sm leading-6 text-[#68837c]">Download the latest Android installer directly. Android may ask you to allow installs from your browser.</p>
             </div>
           </div>
-          <a href="https://github.com/Bill908/clarity-health.github.io/releases/latest/download/app-debug.apk" className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-[#0f766e] px-6 text-sm font-semibold text-white shadow-[0_8px_16px_rgba(15,118,110,0.16)] transition hover:bg-[#0a655f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e] focus-visible:ring-offset-2"><Download size={17} />Download Android app</a>
+          <a href="https://github.com/Bill908/clarity-health.github.io/releases/latest/download/ClarityHealth.apk" className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-[#0f766e] px-6 text-sm font-semibold text-white shadow-[0_8px_16px_rgba(15,118,110,0.16)] transition hover:bg-[#0a655f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e] focus-visible:ring-offset-2"><Download size={17} />Download Android app</a>
         </div>
       </section>
 
