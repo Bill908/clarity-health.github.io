@@ -7,6 +7,7 @@ import {
   Check,
   ChevronRight,
   Clock3,
+  Download,
   ExternalLink,
   FileText,
   HeartPulse,
@@ -24,6 +25,7 @@ import {
   Search,
   Send,
   ShieldCheck,
+  Smartphone,
   Sparkles,
   Stethoscope,
   TriangleAlert,
@@ -950,6 +952,20 @@ function Index() {
           </section>
         )}
       </main>
+
+      <section aria-labelledby="android-download-title" className="border-t border-[#dce7df] bg-[#edf5eb] px-5 py-12 sm:px-8 sm:py-16">
+        <div className="mx-auto grid max-w-[1180px] items-center gap-7 rounded-[28px] border border-[#d8e4dc] bg-white p-6 shadow-[0_14px_40px_rgba(40,75,67,0.06)] sm:p-9 md:grid-cols-[1fr_auto]">
+          <div className="flex items-start gap-4">
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#e7f2e8] text-[#0f766e]"><Smartphone size={23} /></span>
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#0f766e]">Clarity on Android</p>
+              <h2 id="android-download-title" className="mt-1 font-serif text-[28px] font-semibold tracking-[-0.03em] text-[#183d3a]">Take clarity with you.</h2>
+              <p className="mt-2 max-w-xl text-sm leading-6 text-[#68837c]">Download the latest Android app package from our GitHub Releases page. Android may ask you to allow installs from your browser.</p>
+            </div>
+          </div>
+          <a href="https://github.com/Bill908/clarity-health.github.io/releases/latest/download/app-debug.apk" className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-[#0f766e] px-6 text-sm font-semibold text-white shadow-[0_8px_16px_rgba(15,118,110,0.16)] transition hover:bg-[#0a655f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e] focus-visible:ring-offset-2"><Download size={17} />Download Android app</a>
+        </div>
+      </section>
 
       <footer className="border-t border-[#e3e8df] bg-[#f1f2eb] px-5 py-8 sm:px-8"><div className="mx-auto flex max-w-[1180px] flex-col justify-between gap-4 text-xs text-[#819991] sm:flex-row sm:items-center"><div className="flex items-center gap-2 font-semibold text-[#54746c]"><LogoMark /><span>Clarity Health</span></div><div className="flex flex-wrap items-center gap-x-5 gap-y-2"><span>Educational information, not medical advice</span><a href="https://www.cdc.gov/" target="_blank" rel="noreferrer" className="flex items-center gap-1 hover:text-[#0f766e]">Our sources <ExternalLink size={12} /></a></div></div></footer>
     </div>

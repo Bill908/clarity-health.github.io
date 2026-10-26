@@ -3,6 +3,9 @@ name: Build Android APK
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -62,3 +65,11 @@ jobs:
           name: android-apk
           # If in a subfolder, use: path: app/android/app/build/outputs/apk/debug/*.apk
           path: android/app/build/outputs/apk/debug/*.apk
+
+      - name: Publish APK release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-build-${{ github.run_number }}
+          name: Android app build ${{ github.run_number }}
+          generate_release_notes: true
+          files: android/app/build/outputs/apk/debug/*.apk
